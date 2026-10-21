@@ -21,7 +21,7 @@ const APP_CONFIG = {
   API_PROXY_ENDPOINT: '/api',
 
   // Direct Google Apps Script Web App URL (Fallback jika tidak lewat Cloudflare Worker)
-  DEFAULT_APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbz_placeholder/exec',
+  DEFAULT_APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwPaWCE4svxuuaimsDHd5rrQq1TTfd3CCnmFjHx6mmsxD45eopyQSviDZjxHiG7BOw3nA/exec',
 
   // Status Fitur (Fitur Pro Terkunci untuk Monetisasi Upsell)
   FEATURES: {

@@ -9,7 +9,7 @@
  */
 
 // Target default URL Apps Script (Dapat dioverride via Cloudflare Pages Environment Variable: APPS_SCRIPT_URL)
-const DEFAULT_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz_placeholder/exec';
+const DEFAULT_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwPaWCE4svxuuaimsDHd5rrQq1TTfd3CCnmFjHx6mmsxD45eopyQSviDZjxHiG7BOw3nA/exec';
 
 export default {
   async fetch(request, env, ctx) {
