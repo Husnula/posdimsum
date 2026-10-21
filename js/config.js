@@ -1,9 +1,11 @@
 /**
- * Konfigurasi Utama Aplikasi POS Teras Foodies
+ * CONFIG.JS - Konfigurasi Utama POS Teras Foodies
+ * Digunakan baik saat berjalan di Cloudflare Pages (posdimsum.pages.dev)
+ * maupun saat pengujian lokal atau server mandiri.
  */
 
 const APP_CONFIG = {
-  // Informasi Toko
+  // Profil Toko & Kontak
   STORE_NAME: 'Teras Foodies',
   STORE_SLOGAN: 'Dimsum & Mie Jebew Lezat',
   STORE_ADDRESS: 'Jalan Jaya Rengel-Widang, Ds. Kedungrojo, 100 m Timur Tugu',
@@ -13,9 +15,13 @@ const APP_CONFIG = {
   // Kontak Developer untuk Upgrade Fitur Pro
   DEVELOPER_WA: '6288228511309',
 
-  // Endpoint API Google Apps Script (Bisa diupdate kasir/owner lewat modal pengaturan)
-  // Default URL deployment atau diambil dari localStorage
-  DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbz_placeholder/exec',
+  // Endpoint API:
+  // Pada Cloudflare Pages (posdimsum.pages.dev), request diarahkan ke proxy '/api'
+  // yang ditangani secara transparan oleh _worker.js tanpa kendala CORS.
+  API_PROXY_ENDPOINT: '/api',
+
+  // Direct Google Apps Script Web App URL (Fallback jika tidak lewat Cloudflare Worker)
+  DEFAULT_APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbz_placeholder/exec',
 
   // Status Fitur (Fitur Pro Terkunci untuk Monetisasi Upsell)
   FEATURES: {
@@ -45,18 +51,26 @@ const APP_CONFIG = {
 };
 
 /**
- * Mendapatkan URL API Apps Script aktif
+ * Mendapatkan URL endpoint API yang aktif
+ * Jika sedang berjalan di Cloudflare Pages, memprioritaskan proxy '/api'
+ * kecuali jika user secara spesifik memasukkan URL custom di modal pengaturan.
  */
 function getApiUrl() {
   const customUrl = localStorage.getItem(APP_CONFIG.STORAGE_KEYS.API_URL);
   if (customUrl && customUrl.trim() !== '') {
     return customUrl.trim();
   }
-  return APP_CONFIG.DEFAULT_API_URL;
+
+  // Jika diakses dari domain Cloudflare Pages (*.pages.dev), gunakan /api proxy
+  if (window.location.hostname.includes('pages.dev')) {
+    return APP_CONFIG.API_PROXY_ENDPOINT;
+  }
+
+  return APP_CONFIG.DEFAULT_APPS_SCRIPT_URL;
 }
 
 /**
- * Menyimpan URL API Apps Script baru
+ * Menyimpan URL API baru ke localStorage
  */
 function saveApiUrl(url) {
   if (url && url.trim() !== '') {
@@ -67,10 +81,9 @@ function saveApiUrl(url) {
 }
 
 /**
- * Memeriksa apakah suatu fitur terbuka atau terkunci
+ * Memeriksa status fitur (terbuka vs terkunci)
  */
 function isFeatureUnlocked(featureKey) {
-  // Cek apakah ada override di localStorage (misal setelah upgrade aktivasi)
   const unlockedFeatures = JSON.parse(localStorage.getItem('tf_pos_unlocked_features') || '{}');
   if (unlockedFeatures[featureKey] !== undefined) {
     return unlockedFeatures[featureKey];
