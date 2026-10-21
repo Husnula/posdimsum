@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#E03E1A">
+  <meta name="description" content="Aplikasi POS Kasir & Manajemen Penjualan Dimsum Teras Foodies dengan PWA dan Database Google Sheets">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="assets/icon-192.svg">
+  <link rel="apple-touch-icon" href="assets/icon-192.svg">
+  <title>POS Teras Foodies - Kasir & Rekap Penjualan Dimsum</title>
+
+  <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Phosphor Icons CDN -->
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css"/>
+
+  <!-- SweetAlert2 CDN (Anti-Alert Bawaan) -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  <!-- Style CSS -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- HEADER APLIKASI KASIR -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="header-brand">
+        <div class="brand-icon-box">
+          <i class="ph ph-cooking-pot"></i>
+        </div>
+        <div>
+          <div class="brand-title" id="header-store-name">Teras Foodies</div>
+          <span class="brand-badge">Kasir: <span id="header-cashier-name">Alfian</span></span>
+        </div>
+      </div>
+
+      <!-- Indikator Jaringan & Antrean Sync -->
+      <div class="status-indicator status-online" id="connection-status-badge">
+        <span id="connection-status-text">Online</span>
+      </div>
+      <span class="pending-badge" id="pending-sync-badge">0 Pending</span>
+    </div>
+
+    <div class="header-right">
+      <!-- Tombol Pasang PWA di Tablet -->
+      <button class="header-btn header-btn-install" id="btn-pwa-install" onclick="App.triggerPWAInstall()">
+        <i class="ph ph-download-simple"></i> Pasang di Tablet
+      </button>
+
+      <!-- Tombol Rekap Penjualan (Kebutuhan Utama Klien) -->
+      <button class="header-btn" onclick="App.openReportsModal()" title="Lihat Rekap Penjualan">
+        <i class="ph ph-chart-line-up" style="color:var(--color-primary)"></i> Rekap Penjualan
+      </button>
+
+      <!-- Fitur Pro Terkunci (Bahan Upsell / Upgrade Biaya) -->
+      <button class="header-btn" onclick="App.triggerLockedFeature('Manajemen Shift Kasir', 'Catat modal kas awal saat buka gerai dan hitung otomatis selisih kas fisik di laci kasir saat tutup shift.')" title="Fitur Pro: Shift Kasir">
+        <i class="ph ph-clock-user"></i> Shift 🔒
+      </button>
+
+      <button class="header-btn" onclick="App.triggerLockedFeature('Pencatatan Pengeluaran & Laba', 'Catat pembelian bahan baku, gas, kemasan, dan es batu untuk memantau laba bersih harian otomatis.')" title="Fitur Pro: Catat Pengeluaran">
+        <i class="ph ph-wallet"></i> Biaya 🔒
+      </button>
+
+      <!-- Tombol Pengaturan Koneksi Database -->
+      <button class="header-btn header-btn-icon" onclick="App.openSettingsModal()" title="Pengaturan & Database" aria-label="Pengaturan">
+        <i class="ph ph-gear"></i>
+      </button>
+
+      <!-- Tombol Mode Gelap/Terang -->
+      <button class="header-btn header-btn-icon" id="btn-toggle-theme" title="Ganti Tema" aria-label="Ganti Tema">
+        <i class="ph ph-moon"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- LAYOUT DUA KOLOM POS (DESKTOP & TABLET SPLIT SCREEN) -->
+  <main class="pos-layout-container">
+
+    <!-- KOLOM KIRI: KATALOG MENU RIIL DARI DATABASE -->
+    <section class="pos-catalog-panel">
+      
+      <!-- PENCARIAN CEPAT -->
+      <div class="catalog-top-bar">
+        <div class="search-input-box">
+          <i class="ph ph-magnifying-glass"></i>
+          <input type="text" id="search-menu-input" placeholder="Cari nama dimsum, mie jebew, atau minuman..." autocomplete="off">
+        </div>
+      </div>
+
+      <!-- TAB KATEGORI MENU HORIZONTAL -->
+      <nav class="category-tabs-wrapper" aria-label="Kategori Menu">
+        <button class="cat-tab-btn active" data-category="Semua" onclick="App.setCategory('Semua')">
+          <i class="ph ph-squares-four"></i> Semua Menu
+        </button>
+        <button class="cat-tab-btn" data-category="Dimsum Ori" onclick="App.setCategory('Dimsum Ori')">
+          <i class="ph ph-bowl-food"></i> Dimsum Ori
+        </button>
+        <button class="cat-tab-btn" data-category="Dimsum Mentai" onclick="App.setCategory('Dimsum Mentai')">
+          <i class="ph ph-fire"></i> Dimsum Mentai
+        </button>
+        <button class="cat-tab-btn" data-category="Dimsum Hot Lava" onclick="App.setCategory('Dimsum Hot Lava')">
+          <i class="ph ph-flame"></i> Hot Lava
+        </button>
+        <button class="cat-tab-btn" data-category="Wonton" onclick="App.setCategory('Wonton')">
+          <i class="ph ph-cookie"></i> Wonton
+        </button>
+        <button class="cat-tab-btn" data-category="Basreng" onclick="App.setCategory('Basreng')">
+          <i class="ph ph-pepper"></i> Basreng
+        </button>
+        <button class="cat-tab-btn" data-category="Mie Jebew" onclick="App.setCategory('Mie Jebew')">
+          <i class="ph ph-fork-knife"></i> Mie Jebew
+        </button>
+        <button class="cat-tab-btn" data-category="Minuman" onclick="App.setCategory('Minuman')">
+          <i class="ph ph-brandy"></i> Minuman Segar
+        </button>
+        <button class="cat-tab-btn" data-category="Birthday Dimsum" onclick="App.setCategory('Birthday Dimsum')">
+          <i class="ph ph-cake"></i> Birthday Dimsum
+        </button>
+      </nav>
+
+      <!-- WADAH GRID MENU (DIMUAT DINAMIS 100% DARI GOOGLE SHEETS) -->
+      <div class="menu-grid-scroll-area">
+        <div class="menu-grid" id="menu-grid-container">
+          <!-- Item menu dimuat dinamis oleh app.js (Zero dummy data statis) -->
+        </div>
+      </div>
+    </section>
+
+    <!-- KOLOM KANAN: PANEL KERANJANG KASIR AKTIF -->
+    <aside class="pos-cart-panel" id="pos-cart-panel">
+      <div class="cart-header">
+        <div class="cart-title-box">
+          <i class="ph ph-shopping-cart-simple" style="font-size:20px; color:var(--color-primary)"></i>
+          <span class="cart-title">Pesanan Aktif</span>
+          <span class="cart-badge-count" id="cart-total-badge">0</span>
+        </div>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <button class="btn-cart-clear" onclick="Cart.clear()" title="Kosongkan Keranjang">Kosongkan</button>
+          <button class="header-btn header-btn-icon btn-close-mobile-cart" id="btn-close-mobile-cart" style="display:none;" aria-label="Tutup Keranjang">
+            <i class="ph ph-x"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Pemilih Tipe Pesanan -->
+      <div class="order-type-selector">
+        <button class="order-type-chip active" data-type="Dine-in">
+          <i class="ph ph-storefront"></i> Dine-in
+        </button>
+        <button class="order-type-chip" data-type="Takeaway">
+          <i class="ph ph-tote"></i> Bungkus
+        </button>
+        <button class="order-type-chip" data-type="WhatsApp">
+          <i class="ph ph-whatsapp-logo"></i> WhatsApp
+        </button>
+      </div>
+
+      <!-- Daftar Item Pesanan -->
+      <div class="cart-items-scroll" id="cart-items-list">
+        <!-- Rincian baris keranjang dirender dinamis oleh cart.js -->
+      </div>
+
+      <!-- Ringkasan Kalkulasi & Tombol Eksekusi Bayar -->
+      <div class="cart-footer-panel">
+        <div class="cart-summary-line">
+          <span>Subtotal Pesanan</span>
+          <span class="font-mono" id="cart-subtotal-val">Rp0</span>
+        </div>
+        <div class="cart-summary-line">
+          <span>Potongan Diskon</span>
+          <span class="font-mono" id="cart-discount-val">Rp0</span>
+        </div>
+        <div class="cart-grand-total-line">
+          <span class="total-label">TOTAL AKHIR</span>
+          <span class="total-val" id="cart-grand-total-val">Rp0</span>
+        </div>
+
+        <button class="btn-checkout-main" id="btn-checkout-action" onclick="App.openCheckoutModal()" disabled>
+          <i class="ph ph-credit-card"></i> PROSES PEMBAYARAN
+        </button>
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- BILAH FLOATING KERANJANG (KHUSUS SMARTPHONE & SMALL SCREEN) -->
+  <div class="floating-cart-bar" id="floating-cart-bar">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <i class="ph ph-shopping-bag" style="font-size:24px;"></i>
+      <div>
+        <div style="font-weight:700; font-size:14px;" id="floating-cart-count">0 Item</div>
+        <div style="font-size:11px; opacity:0.9;">Ketuk untuk buka kasir</div>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span class="font-mono" style="font-size:18px; font-weight:800;" id="floating-cart-total">Rp0</span>
+      <i class="ph ph-caret-up" style="font-size:20px;"></i>
+    </div>
+  </div>
+
+  <!-- MODAL PEMBAYARAN CEPAT (CHECKOUT) -->
+  <div class="modal-backdrop" id="checkout-modal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">Pembayaran Transaksi</h3>
+        <button class="modal-close-btn" onclick="App.closeCheckoutModal()" aria-label="Tutup">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="checkout-amount-display">
+          <div class="checkout-label">Total Yang Harus Dibayar</div>
+          <div class="checkout-val" id="checkout-grand-total">Rp0</div>
+        </div>
+
+        <!-- Pemilih Metode Bayar -->
+        <div class="payment-method-tabs">
+          <button class="pay-method-btn active" data-method="Tunai" onclick="App.setPaymentMethod('Tunai')">
+            <i class="ph ph-money"></i> Uang Tunai
+          </button>
+          <button class="pay-method-btn" data-method="QRIS" onclick="App.setPaymentMethod('QRIS')">
+            <i class="ph ph-qr-code"></i> QRIS
+          </button>
+        </div>
+
+        <!-- Panel Pembayaran Tunai -->
+        <div id="payment-cash-panel">
+          <label style="font-size:13px; font-weight:600; color:var(--text-secondary); margin-bottom:6px; display:block;">
+            Pilihan Cepat Nominal Uang:
+          </label>
+          <div class="quick-cash-row">
+            <button class="btn-quick-cash" onclick="App.setQuickCash('pas')">Uang Pas</button>
+            <button class="btn-quick-cash" onclick="App.setQuickCash(20000)">20.000</button>
+            <button class="btn-quick-cash" onclick="App.setQuickCash(50000)">50.000</button>
+            <button class="btn-quick-cash" onclick="App.setQuickCash(100000)">100.000</button>
+          </div>
+
+          <label style="font-size:13px; font-weight:600; color:var(--text-secondary); margin-bottom:6px; display:block;">
+            Uang Tunai Diterima (Rp):
+          </label>
+          <input type="number" id="input-cash-amount" class="cash-input-field" placeholder="0">
+
+          <div class="change-display-box">
+            <span class="change-label">Uang Kembalian:</span>
+            <span class="change-val" id="checkout-change-amount">Rp0</span>
+          </div>
+        </div>
+
+        <!-- Panel Pembayaran QRIS -->
+        <div id="payment-qris-panel" style="display:none; text-align:center; padding:16px 0;">
+          <div style="width:180px; height:180px; margin:0 auto 12px auto; background:#FFF; border:2px dashed #CBD5E1; border-radius:14px; display:flex; align-items:center; justify-content:center;">
+            <i class="ph ph-qr-code" style="font-size:120px; color:#0F172A;"></i>
+          </div>
+          <p style="font-size:14px; font-weight:700; color:var(--text-primary); margin-bottom:4px;">Tunjukkan QRIS Teras Foodies ke Pelanggan</p>
+          <span style="font-size:12px; color:var(--text-secondary);">Setelah notifikasi pembayaran masuk, klik tombol Selesaikan Pembayaran di bawah.</span>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="App.closeCheckoutModal()">Batal</button>
+        <button class="btn-primary" id="btn-submit-payment" onclick="App.submitPayment()">
+          <i class="ph ph-check-circle"></i> Selesaikan Pembayaran
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL REKAPAN PENJUALAN OTOMATIS (SOLUSI ANTI-CATAT MANUAL) -->
+  <div class="modal-backdrop" id="reports-modal">
+    <div class="modal-box" style="max-width:680px;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <i class="ph ph-chart-bar" style="font-size:24px; color:var(--color-primary)"></i>
+          <h3 class="modal-title">Rekapan Penjualan Otomatis</h3>
+        </div>
+        <button class="modal-close-btn" onclick="App.closeReportsModal()" aria-label="Tutup">&times;</button>
+      </div>
+
+      <div class="modal-body" id="reports-content-area">
+        <!-- Dimuat dinamis oleh App.renderReportsView() -->
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL PENGATURAN KONEKSI DATABASE APPS SCRIPT -->
+  <div class="modal-backdrop" id="settings-modal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">Pengaturan Database & Kasir</h3>
+        <button class="modal-close-btn" onclick="App.closeSettingsModal()" aria-label="Tutup">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div style="margin-bottom:16px;">
+          <label style="font-size:13px; font-weight:700; color:var(--text-primary); margin-bottom:6px; display:block;">
+            URL Web App Google Apps Script:
+          </label>
+          <input type="url" id="setting-api-url" class="cash-input-field" style="font-size:13px; height:44px; font-family:var(--font-sans);" placeholder="https://script.google.com/macros/s/.../exec">
+          <small style="color:var(--text-secondary); line-height:1.4; display:block; margin-top:4px;">
+            Salin URL hasil Deploy Web App dari file <code>Code.gs</code> di Google Sheets Anda.
+          </small>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="font-size:13px; font-weight:700; color:var(--text-primary); margin-bottom:6px; display:block;">
+            Nama Kasir Aktif:
+          </label>
+          <input type="text" id="setting-cashier-name" class="cash-input-field" style="font-size:14px; height:44px; font-family:var(--font-sans);" placeholder="Contoh: Alfian">
+        </div>
+
+        <button class="btn-secondary" style="width:100%; justify-content:center; display:flex; align-items:center; gap:6px;" onclick="App.testApiConnection()">
+          <i class="ph ph-plugs-connected"></i> Uji Koneksi ke Google Sheets
+        </button>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="App.closeSettingsModal()">Batal</button>
+        <button class="btn-primary" onclick="App.saveSettings()">Simpan Pengaturan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AREA KHUSUS CETAK STRUK THERMAL (HANYA DITAMPILKAN SAAT PRINT) -->
+  <div id="thermal-receipt-print-area"></div>
+
+  <!-- SCRIPTS APLIKASI -->
+  <script src="js/config.js"></script>
+  <script src="js/notifications.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/cart.js"></script>
+  <script src="js/receipt.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
