@@ -3,7 +3,7 @@
  * Mendukung instalasi PWA di Tablet / Smartphone & akses offline
  */
 
-const CACHE_NAME = 'teras-foodies-pos-v1';
+const CACHE_NAME = 'teras-foodies-pos-v2';
 const STATIC_ASSETS = [
   './',
   './index.html',

@@ -211,8 +211,13 @@ function doGet(e) {
     }
 
     if (action === 'getReports') {
-      const dateFilter = params.date || getTodayFormatted();
-      return handleGetReports(dateFilter);
+      let filter = (params.date || params.period || '').toString().trim();
+      if (!filter || filter.toLowerCase() === 'today') {
+        filter = getTodayFormatted();
+      } else if (filter.toLowerCase() === 'all' || filter.toLowerCase() === 'semua') {
+        filter = 'all';
+      }
+      return handleGetReports(filter);
     }
 
     return createJsonResponse({
@@ -443,20 +448,27 @@ function handleSyncBatchTransactions(items) {
 }
 
 /**
- * Mengambil ringkasan rekapan penjualan harian
+ * Mengambil ringkasan rekapan penjualan (harian / custom / all-time)
  */
 function handleGetReports(dateFilter) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const isAll = (!dateFilter || dateFilter === 'all');
+  const todayStr = getTodayFormatted();
+  let labelPeriode = isAll ? 'Semua Penjualan (All-Time)' : dateFilter;
+  if (dateFilter === todayStr) {
+    labelPeriode = `Hari Ini (${todayStr})`;
+  }
+
   const sheetTrx = ss.getSheetByName(SHEET_NAMES.TRANSAKSI);
   const sheetDetail = ss.getSheetByName(SHEET_NAMES.DETAIL);
 
   if (!sheetTrx) {
-    return createJsonResponse({ status: 'success', data: getEmptyReport(dateFilter) });
+    return createJsonResponse({ status: 'success', data: getEmptyReport(labelPeriode) });
   }
 
   const lastRow = sheetTrx.getLastRow();
   if (lastRow <= 1) {
-    return createJsonResponse({ status: 'success', data: getEmptyReport(dateFilter) });
+    return createJsonResponse({ status: 'success', data: getEmptyReport(labelPeriode) });
   }
 
   const rawTrx = sheetTrx.getRange(2, 1, lastRow - 1, 15).getValues();
@@ -466,14 +478,19 @@ function handleGetReports(dateFilter) {
   let totalTunai = 0;
   let totalQris = 0;
   let totalTransfer = 0;
-  const listTrxHariIni = [];
+  const listTrx = [];
 
   for (let i = 0; i < rawTrx.length; i++) {
     const row = rawTrx[i];
-    const tgl = String(row[1]).trim();
+    let tgl = row[1];
+    if (tgl instanceof Date) {
+      tgl = formatDateIndo(tgl);
+    } else {
+      tgl = String(tgl || '').trim();
+    }
 
     // Cocokkan tanggal
-    if (!dateFilter || tgl === dateFilter) {
+    if (isAll || tgl === dateFilter) {
       const totalAkhir = Number(row[9]) || 0;
       const metode = String(row[5]).trim().toLowerCase();
 
@@ -488,8 +505,9 @@ function handleGetReports(dateFilter) {
         totalTransfer += totalAkhir;
       }
 
-      listTrxHariIni.push({
+      listTrx.push({
         id: String(row[0]),
+        tanggal: tgl,
         jam: String(row[2]),
         kasir: String(row[3]),
         tipe: String(row[4]),
@@ -504,7 +522,7 @@ function handleGetReports(dateFilter) {
   const itemCounts = {};
   if (sheetDetail && sheetDetail.getLastRow() > 1) {
     const rawDetail = sheetDetail.getRange(2, 1, sheetDetail.getLastRow() - 1, 9).getValues();
-    const validTrxIds = new Set(listTrxHariIni.map(t => t.id));
+    const validTrxIds = new Set(listTrx.map(t => t.id));
 
     for (let j = 0; j < rawDetail.length; j++) {
       const dRow = rawDetail[j];
@@ -528,7 +546,8 @@ function handleGetReports(dateFilter) {
   return createJsonResponse({
     status: 'success',
     data: {
-      tanggal: dateFilter,
+      tanggal: labelPeriode,
+      filter: dateFilter,
       totalOmzet: totalOmzet,
       totalTransaksi: totalTransaksi,
       metode: {
@@ -537,7 +556,7 @@ function handleGetReports(dateFilter) {
         transfer: totalTransfer
       },
       itemsTerjual: itemsTerjual,
-      transaksiTerbaru: listTrxHariIni.reverse().slice(0, 20)
+      transaksiTerbaru: listTrx.reverse().slice(0, 20)
     }
   });
 }

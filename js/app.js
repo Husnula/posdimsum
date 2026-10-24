@@ -12,6 +12,8 @@ const App = {
   currentTransaction: null,
   paymentCashReceived: 0,
   paymentMethod: 'Tunai',
+  currentReportFilter: 'today',
+  currentReportCustomDate: '',
 
   /**
    * Inisialisasi awal aplikasi saat dokumen selesai dimuat
@@ -479,32 +481,210 @@ const App = {
   },
 
   /**
+   * Helper format tanggal untuk filter laporan
+   */
+  getTodayIsoDate() {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  },
+
+  getTodayIndoDate() {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    return `${dd}/${mm}/${yyyy}`;
+  },
+
+  isoToIndoDate(iso) {
+    if (!iso) return '';
+    const parts = iso.split('-');
+    if (parts.length !== 3) return iso;
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  },
+
+  indoToIsoDate(indo) {
+    if (!indo) return '';
+    const parts = indo.split('/');
+    if (parts.length !== 3) return indo;
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  },
+
+  /**
    * Buka Modal Rekapan Penjualan Otomatis (Solusi anti-catat manual)
    */
-  async openReportsModal() {
+  async openReportsModal(period = null, customDate = null) {
     const modal = document.getElementById('reports-modal');
     if (!modal) return;
 
-    modal.classList.add('modal-open');
-    const contentEl = document.getElementById('reports-content-area');
-    
-    if (contentEl) {
-      contentEl.innerHTML = `
-        <div class="menu-loading-state">
-          <div class="tf-spinner"></div>
-          <p>Mengambil rekapan penjualan hari ini...</p>
-        </div>
-      `;
+    if (period) {
+      this.currentReportFilter = period;
     }
+    if (customDate !== null) {
+      this.currentReportCustomDate = customDate;
+    } else if (!this.currentReportCustomDate) {
+      this.currentReportCustomDate = this.getTodayIsoDate();
+    }
+
+    modal.classList.add('modal-open');
+    await this.fetchAndRenderReports();
+  },
+
+  closeReportsModal() {
+    const modal = document.getElementById('reports-modal');
+    if (modal) modal.classList.remove('modal-open');
+  },
+
+  async changeReportPeriod(period) {
+    this.currentReportFilter = period;
+    if (period === 'custom' && !this.currentReportCustomDate) {
+      this.currentReportCustomDate = this.getTodayIsoDate();
+    }
+    await this.fetchAndRenderReports();
+  },
+
+  async onCustomDateChange(dateValue) {
+    if (!dateValue) return;
+    this.currentReportCustomDate = dateValue;
+    this.currentReportFilter = 'custom';
+    await this.fetchAndRenderReports();
+  },
+
+  async refreshCurrentReport() {
+    await this.fetchAndRenderReports();
+  },
+
+  renderReportFilterBarHtml() {
+    const isToday = this.currentReportFilter === 'today';
+    const isAll = this.currentReportFilter === 'all';
+    const isCustom = this.currentReportFilter === 'custom';
+    const pickerVal = this.currentReportCustomDate || this.getTodayIsoDate();
+
+    return `
+      <div class="recap-filter-bar">
+        <div class="recap-filter-group">
+          <button type="button" class="recap-filter-pill ${isToday ? 'active' : ''}" onclick="App.changeReportPeriod('today')">
+            <i class="ph ph-calendar"></i> Hari Ini
+          </button>
+          <button type="button" class="recap-filter-pill ${isAll ? 'active' : ''}" onclick="App.changeReportPeriod('all')">
+            <i class="ph ph-database"></i> Semua Penjualan
+          </button>
+          <button type="button" class="recap-filter-pill ${isCustom ? 'active' : ''}" onclick="App.changeReportPeriod('custom')">
+            <i class="ph ph-calendar-plus"></i> Pilih Tanggal
+          </button>
+        </div>
+        ${isCustom ? `
+          <div class="recap-custom-date">
+            <input type="date" class="recap-date-input" value="${pickerVal}" onchange="App.onCustomDateChange(this.value)" />
+          </div>
+        ` : ''}
+        <button type="button" class="recap-refresh-btn" onclick="App.refreshCurrentReport()" title="Segarkan Data Rekap">
+          <i class="ph ph-arrows-clockwise"></i>
+        </button>
+      </div>
+    `;
+  },
+
+  async buildLocalReportFallback(filterParam) {
+    let offlineList = [];
+    try {
+      if (typeof DB !== 'undefined' && DB.getOfflineTransactions) {
+        offlineList = await DB.getOfflineTransactions();
+      }
+    } catch (e) {
+      console.warn('Gagal ambil transaksi offline:', e);
+    }
+
+    const allLocal = [...offlineList];
+    if (this.currentTransaction && !allLocal.some(t => t.id === this.currentTransaction.id)) {
+      allLocal.push(this.currentTransaction);
+    }
+
+    const todayStr = this.getTodayIndoDate();
+    const customStr = this.isoToIndoDate(this.currentReportCustomDate);
+
+    const filtered = allLocal.filter(t => {
+      const tgl = String(t.tanggal || '').trim();
+      if (filterParam === 'all') return true;
+      if (filterParam === 'custom') return tgl === customStr;
+      return tgl === todayStr;
+    });
+
+    let totalOmzet = 0;
+    let totalTunai = 0;
+    let totalQris = 0;
+    let totalTransfer = 0;
+    const itemMap = {};
+
+    filtered.forEach(t => {
+      const total = Number(t.totalAkhir) || 0;
+      totalOmzet += total;
+      const metode = String(t.metodeBayar || '').toLowerCase();
+      if (metode === 'tunai' || metode === 'cash') totalTunai += total;
+      else if (metode === 'qris') totalQris += total;
+      else totalTransfer += total;
+
+      if (Array.isArray(t.items)) {
+        t.items.forEach(it => {
+          const name = it.nama;
+          if (!itemMap[name]) itemMap[name] = { nama: name, qty: 0, omzet: 0 };
+          itemMap[name].qty += (Number(it.qty) || 0);
+          itemMap[name].omzet += (Number(it.subtotal) || 0);
+        });
+      }
+    });
+
+    let label = `Hari Ini (${todayStr})`;
+    if (filterParam === 'all') label = 'Semua Penjualan (All-Time)';
+    else if (filterParam === 'custom') label = customStr || 'Tanggal Pilihan';
+
+    return {
+      tanggal: label,
+      totalOmzet,
+      totalTransaksi: filtered.length,
+      metode: { tunai: totalTunai, qris: totalQris, transfer: totalTransfer },
+      itemsTerjual: Object.values(itemMap).sort((a, b) => b.qty - a.qty),
+      transaksiTerbaru: filtered.slice(-10).reverse()
+    };
+  },
+
+  async fetchAndRenderReports() {
+    const contentEl = document.getElementById('reports-content-area');
+    if (!contentEl) return;
+
+    contentEl.innerHTML = `
+      <div class="recap-dashboard">
+        ${this.renderReportFilterBarHtml()}
+        <div class="recap-loading-state">
+          <div class="tf-spinner"></div>
+          <p>Memuat ringkasan penjualan...</p>
+        </div>
+      </div>
+    `;
 
     const apiUrl = getApiUrl();
     let reportData = null;
 
+    let filterParam = this.currentReportFilter;
+    let queryStr = '?action=getReports';
+
+    if (filterParam === 'all') {
+      queryStr = '?action=getReports&period=all&date=all';
+    } else if (filterParam === 'custom') {
+      const indoDate = this.isoToIndoDate(this.currentReportCustomDate);
+      queryStr = `?action=getReports&period=custom&date=${encodeURIComponent(indoDate)}`;
+    } else {
+      queryStr = `?action=getReports&period=today&date=${encodeURIComponent(this.getTodayIndoDate())}`;
+    }
+
     if (navigator.onLine && !apiUrl.includes('AKfycbz_placeholder')) {
       try {
-        const res = await fetch(`${apiUrl}?action=getReports`);
+        const res = await fetch(`${apiUrl}${queryStr}`);
         const json = await res.json();
-        if (json.status === 'success') {
+        if (json.status === 'success' && json.data) {
           reportData = json.data;
         }
       } catch (e) {
@@ -512,28 +692,11 @@ const App = {
       }
     }
 
-    // Jika gagal online atau offline, hitung dari data transaksi lokal jika ada
     if (!reportData) {
-      reportData = {
-        tanggal: 'Hari ini',
-        totalOmzet: this.currentTransaction ? this.currentTransaction.totalAkhir : 0,
-        totalTransaksi: this.currentTransaction ? 1 : 0,
-        metode: {
-          tunai: this.currentTransaction && this.currentTransaction.metodeBayar === 'Tunai' ? this.currentTransaction.totalAkhir : 0,
-          qris: this.currentTransaction && this.currentTransaction.metodeBayar === 'QRIS' ? this.currentTransaction.totalAkhir : 0,
-          transfer: 0
-        },
-        itemsTerjual: this.currentTransaction ? this.currentTransaction.items.map(i => ({ nama: i.nama, qty: i.qty, omzet: i.subtotal })) : [],
-        transaksiTerbaru: this.currentTransaction ? [this.currentTransaction] : []
-      };
+      reportData = await this.buildLocalReportFallback(filterParam);
     }
 
     this.renderReportsView(reportData);
-  },
-
-  closeReportsModal() {
-    const modal = document.getElementById('reports-modal');
-    if (modal) modal.classList.remove('modal-open');
   },
 
   renderReportsView(data) {
@@ -552,41 +715,56 @@ const App = {
         `;
       });
     } else {
-      itemsHtml = '<p class="text-muted" style="text-align:center; padding:12px;">Belum ada menu terjual pada periode ini.</p>';
+      let emptyMsg = 'Belum ada menu terjual pada periode ini.';
+      if (this.currentReportFilter === 'today') {
+        emptyMsg = 'Belum ada menu terjual hari ini. Pesanan baru kasir akan otomatis terakumulasi di sini.';
+      } else if (this.currentReportFilter === 'all') {
+        emptyMsg = 'Belum ada riwayat transaksi penjualan yang tercatat di database.';
+      } else if (this.currentReportFilter === 'custom') {
+        emptyMsg = `Tidak ada catatan transaksi penjualan pada tanggal ${escapeHtml(data.tanggal || '')}.`;
+      }
+      itemsHtml = `<p class="text-muted" style="text-align:center; padding:18px 12px; margin:0; font-size:13px;">${emptyMsg}</p>`;
     }
+
+    const cashSubLabel = this.currentReportFilter === 'today' ? 'Wajib cocok dengan fisik laci' : 'Total pemasukan uang tunai';
 
     contentEl.innerHTML = `
       <div class="recap-dashboard">
+        ${this.renderReportFilterBarHtml()}
+
         <!-- Kartu Ringkasan Finansial -->
         <div class="recap-stat-grid">
           <div class="stat-card">
             <span class="stat-label">Total Omzet Penjualan</span>
-            <span class="stat-value font-mono">Rp${Number(data.totalOmzet).toLocaleString('id-ID')}</span>
-            <span class="stat-sub">Tanggal: ${escapeHtml(data.tanggal)}</span>
+            <span class="stat-value font-mono">Rp${Number(data.totalOmzet || 0).toLocaleString('id-ID')}</span>
+            <span class="stat-sub">Periode: ${escapeHtml(data.tanggal || '')}</span>
           </div>
 
           <div class="stat-card">
             <span class="stat-label">Total Transaksi Selesai</span>
-            <span class="stat-value font-mono">${data.totalTransaksi} Pesanan</span>
+            <span class="stat-value font-mono">${data.totalTransaksi || 0} Pesanan</span>
             <span class="stat-sub">Semua saluran pesanan</span>
           </div>
 
           <div class="stat-card">
             <span class="stat-label">Uang Kas Tunai (Laci)</span>
-            <span class="stat-value font-mono" style="color:#059669;">Rp${Number(data.metode.tunai).toLocaleString('id-ID')}</span>
-            <span class="stat-sub">Wajib cocok dengan fisik laci</span>
+            <span class="stat-value font-mono" style="color:#059669;">Rp${Number((data.metode && data.metode.tunai) || 0).toLocaleString('id-ID')}</span>
+            <span class="stat-sub">${cashSubLabel}</span>
           </div>
 
           <div class="stat-card">
             <span class="stat-label">Uang Non-Tunai (QRIS)</span>
-            <span class="stat-value font-mono" style="color:#2563EB;">Rp${Number(data.metode.qris).toLocaleString('id-ID')}</span>
+            <span class="stat-value font-mono" style="color:#2563EB;">Rp${Number((data.metode && data.metode.qris) || 0).toLocaleString('id-ID')}</span>
             <span class="stat-sub">Masuk rekening digital</span>
           </div>
         </div>
 
-        <!-- Rincian Produk Terlaris Hari Ini -->
+        <!-- Rincian Produk Terlaris -->
         <div class="recap-section">
-          <h4 class="recap-section-title"><i class="ph ph-chart-bar"></i> Rincian Menu Terjual (Tanpa Catat Nota)</h4>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <h4 class="recap-section-title" style="margin-bottom:0;"><i class="ph ph-chart-bar"></i> Rincian Menu Terjual</h4>
+            <span style="font-size:12px; color:var(--text-secondary); font-weight:600;">${(data.itemsTerjual && data.itemsTerjual.length) || 0} varian</span>
+          </div>
           <div class="recap-table-container">
             ${itemsHtml}
           </div>
