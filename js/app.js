@@ -18,6 +18,7 @@ const App = {
   activeStockTab: 'catalog',
   restockChanges: {},
   opnameDiffs: {},
+  OWNER_PIN: 'alfian1991',
 
   /**
    * Inisialisasi awal aplikasi saat dokumen selesai dimuat
@@ -44,8 +45,9 @@ const App = {
     // Daftarkan event listener UI
     this.bindEvents();
 
-    // Render status kasir
+    // Render status kasir & badge kunci akses
     this.renderHeaderInfo();
+    this.updateLockBadges();
   },
 
   /**
@@ -62,16 +64,18 @@ const App = {
       e.preventDefault();
       this.deferredInstallPrompt = e;
       const installBtn = document.getElementById('btn-pwa-install');
-      if (installBtn) {
-        installBtn.style.display = 'inline-flex';
-      }
+      if (installBtn) installBtn.style.display = 'inline-flex';
+      const drawerInstallBtn = document.getElementById('drawer-btn-install');
+      if (drawerInstallBtn) drawerInstallBtn.style.display = 'flex';
     });
 
     window.addEventListener('appinstalled', () => {
       this.deferredInstallPrompt = null;
       const installBtn = document.getElementById('btn-pwa-install');
       if (installBtn) installBtn.style.display = 'none';
-      Notifications.toast('Aplikasi berhasil dipasang di layar Tablet Anda!', 'success', 3000);
+      const drawerInstallBtn = document.getElementById('drawer-btn-install');
+      if (drawerInstallBtn) drawerInstallBtn.style.display = 'none';
+      Notifications.toast('Aplikasi berhasil dipasang di layar Anda!', 'success', 3000);
     });
   },
 
@@ -564,9 +568,161 @@ const App = {
   },
 
   /**
-   * Buka Modal Rekapan Penjualan Otomatis (Solusi anti-catat manual)
+   * Verifikasi Kunci Keamanan Pemilik (alfian1991)
+   * Mengamankan Rekap Penjualan dan Kelola Menu & Stok
+   */
+  async verifyOwnerSecurityPin(featureName = 'Fitur Pemilik') {
+    // Jika sudah diverifikasi dalam sesi aktif
+    if (sessionStorage.getItem('tf_owner_unlocked') === 'true') {
+      return true;
+    }
+
+    if (typeof Swal === 'undefined') {
+      const entered = prompt(`🔒 Menu ini diproteksi.\nMasukkan kunci akses pemilik untuk membuka ${featureName}:`);
+      if (entered === this.OWNER_PIN) {
+        sessionStorage.setItem('tf_owner_unlocked', 'true');
+        this.updateLockBadges();
+        return true;
+      }
+      alert('Kunci akses salah! Akses ditolak.');
+      return false;
+    }
+
+    const result = await Swal.fire({
+      title: '🔒 Kunci Keamanan',
+      html: `
+        <div style="text-align:center; padding: 4px 0;">
+          <p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px; line-height:1.5;">
+            Fitur <strong>${escapeHtml(featureName)}</strong> dilindungi.<br>Masukkan kunci akses untuk membuka:
+          </p>
+          <input type="password" id="swal-security-pin" class="swal2-input" placeholder="Kunci akses..." autocomplete="off" style="margin:0 auto; width:100%; max-width:260px; height:46px; font-size:16px; text-align:center; letter-spacing:2px; border-radius:10px;">
+          <div style="margin-top:14px; font-size:12px; display:flex; align-items:center; justify-content:center; gap:8px; color:var(--text-secondary);">
+            <input type="checkbox" id="swal-remember-session" checked style="width:16px; height:16px; cursor:pointer; accent-color:var(--color-primary);">
+            <label for="swal-remember-session" style="cursor:pointer; user-select:none;">Ingat kunci selama sesi browser ini</label>
+          </div>
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: '<i class="ph ph-lock-key-open"></i> Buka Akses',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#E03E1A',
+      cancelButtonColor: '#64748B',
+      focusConfirm: false,
+      didOpen: () => {
+        const inputEl = document.getElementById('swal-security-pin');
+        if (inputEl) {
+          inputEl.focus();
+          inputEl.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') Swal.clickConfirm();
+          });
+        }
+      },
+      preConfirm: () => {
+        const pinInput = document.getElementById('swal-security-pin');
+        const val = pinInput ? pinInput.value.trim() : '';
+        const remember = document.getElementById('swal-remember-session')?.checked;
+        if (!val) {
+          Swal.showValidationMessage('Kunci akses wajib diisi!');
+          return false;
+        }
+        if (val !== this.OWNER_PIN) {
+          Swal.showValidationMessage('Kunci akses salah! Hanya pemilik yang berhak.');
+          return false;
+        }
+        return { success: true, remember };
+      }
+    });
+
+    if (result.isConfirmed && result.value && result.value.success) {
+      if (result.value.remember) {
+        sessionStorage.setItem('tf_owner_unlocked', 'true');
+      }
+      Notifications.toast('Akses pemilik berhasil dibuka.', 'success', 2000);
+      this.updateLockBadges();
+      return true;
+    }
+
+    return false;
+  },
+
+  /**
+   * Kunci kembali akses pemilik
+   */
+  lockOwnerAccess() {
+    sessionStorage.removeItem('tf_owner_unlocked');
+    this.updateLockBadges();
+    Notifications.toast('Fitur pemilik telah dikunci kembali (alfian1991).', 'info', 2000);
+  },
+
+  /**
+   * Toggle status kunci pemilik (buka / kunci)
+   */
+  async toggleOwnerLock() {
+    const isUnlocked = (sessionStorage.getItem('tf_owner_unlocked') === 'true');
+    if (isUnlocked) {
+      this.lockOwnerAccess();
+    } else {
+      await this.verifyOwnerSecurityPin('Fitur Pemilik');
+    }
+  },
+
+  /**
+   * Perbarui indikator ikon gembok pada seluruh tombol menu
+   */
+  updateLockBadges() {
+    const isUnlocked = (sessionStorage.getItem('tf_owner_unlocked') === 'true');
+    document.querySelectorAll('.lock-indicator').forEach((el) => {
+      el.innerText = isUnlocked ? '🔓' : '🔒';
+    });
+    const drawerLabel = document.getElementById('drawer-lock-label');
+    if (drawerLabel) {
+      drawerLabel.innerText = isUnlocked ? 'Status: Akses Terbuka (Ketuk untuk Kunci)' : 'Status: Terkunci (alfian1991)';
+    }
+  },
+
+  /**
+   * Buka / Tutup Drawer Menu di Layar HP
+   */
+  toggleMobileMenu(forceState = null) {
+    const overlay = document.getElementById('mobile-drawer-overlay');
+    const panel = document.getElementById('mobile-drawer-panel');
+    if (!overlay || !panel) return;
+
+    const isActive = panel.classList.contains('active');
+    const targetState = forceState !== null ? forceState : !isActive;
+
+    if (targetState) {
+      overlay.classList.add('active');
+      panel.classList.add('active');
+      this.updateLockBadges();
+    } else {
+      overlay.classList.remove('active');
+      panel.classList.remove('active');
+    }
+  },
+
+  /**
+   * Toggle mode tema Gelap / Terang (dapat dipanggil dari header maupun drawer HP)
+   */
+  toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem(APP_CONFIG.STORAGE_KEYS.THEME, newTheme);
+    const themeBtn = document.getElementById('btn-toggle-theme');
+    if (themeBtn) {
+      themeBtn.innerHTML = newTheme === 'dark' ? '<i class="ph ph-sun"></i>' : '<i class="ph ph-moon"></i>';
+    }
+    Notifications.toast(`Tema diubah ke Mode ${newTheme === 'dark' ? 'Gelap' : 'Terang'}.`, 'info', 1500);
+  },
+
+  /**
+   * Buka Modal Rekapan Penjualan Otomatis (Terkunci dengan alfian1991)
    */
   async openReportsModal(period = null, customDate = null) {
+    const isAuth = await this.verifyOwnerSecurityPin('Rekap Penjualan');
+    if (!isAuth) return;
+
     const modal = document.getElementById('reports-modal');
     if (!modal) return;
 
@@ -1007,9 +1163,12 @@ const App = {
   },
 
   /**
-   * Buka Modal Kelola Menu & Manajemen Stok
+   * Buka Modal Kelola Menu & Manajemen Stok (Terkunci dengan alfian1991)
    */
   async openMenuStockModal() {
+    const isAuth = await this.verifyOwnerSecurityPin('Kelola Menu & Manajemen Stok');
+    if (!isAuth) return;
+
     const modalEl = document.getElementById('menu-stock-modal');
     if (!modalEl) return;
     modalEl.classList.add('modal-open');

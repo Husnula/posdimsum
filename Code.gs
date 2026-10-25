@@ -174,7 +174,7 @@ function setupDatabase() {
       ['HEADER_STRUK', 'Selamat Menikmati Kuliner Teras Foodies', 'Teks pembuka struk'],
       ['FOOTER_STRUK', 'Terima Kasih Atas Kunjungan Anda! IG/TikTok: @terasfoodies2', 'Teks penutup struk'],
       ['PIN_KASIR', '1234', 'PIN akses kasir standar'],
-      ['PIN_OWNER', '8888', 'PIN akses laporan owner'],
+      ['PIN_OWNER', 'alfian1991', 'PIN akses laporan owner'],
       ['KUNCI_FITUR_PRO', 'TERKUNCI', 'Status fitur tambahan (Shift, Pengeluaran, Export)']
     ];
     sheetPengaturan.getRange(2, 1, defaultSettings.length, defaultSettings[0].length).setValues(defaultSettings);

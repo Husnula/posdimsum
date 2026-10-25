@@ -47,27 +47,27 @@
     </div>
 
     <div class="header-right">
-      <!-- Tombol Pasang PWA di Tablet -->
-      <button class="header-btn header-btn-install" id="btn-pwa-install" onclick="App.triggerPWAInstall()">
+      <!-- Tombol Pasang PWA di Tablet (Desktop / Layar Lebar) -->
+      <button class="header-btn header-btn-install header-desktop-btn" id="btn-pwa-install" onclick="App.triggerPWAInstall()">
         <i class="ph ph-download-simple"></i> Pasang di Tablet
       </button>
 
-      <!-- Tombol Rekap Penjualan (Kebutuhan Utama Klien) -->
-      <button class="header-btn" onclick="App.openReportsModal()" title="Lihat Rekap Penjualan">
-        <i class="ph ph-chart-line-up" style="color:var(--color-primary)"></i> Rekap Penjualan
+      <!-- Tombol Rekap Penjualan (Kebutuhan Utama Klien - Terkunci alfian1991) -->
+      <button class="header-btn header-desktop-btn" onclick="App.openReportsModal()" title="Lihat Rekap Penjualan (Kunci alfian1991)">
+        <i class="ph ph-chart-line-up" style="color:var(--color-primary)"></i> Rekap Penjualan <span class="lock-indicator" id="lock-badge-recap-desk">🔒</span>
       </button>
 
-      <!-- Tombol Kelola Menu & Stok (CRUD Menu, Restock Cepat & Opname) -->
-      <button class="header-btn" onclick="App.openMenuStockModal()" title="Kelola Menu & Manajemen Stok">
-        <i class="ph ph-package" style="color:var(--color-primary)"></i> Menu & Stok
+      <!-- Tombol Kelola Menu & Stok (CRUD Menu, Restock Cepat & Opname - Terkunci alfian1991) -->
+      <button class="header-btn header-desktop-btn" onclick="App.openMenuStockModal()" title="Kelola Menu & Manajemen Stok (Kunci alfian1991)">
+        <i class="ph ph-package" style="color:var(--color-primary)"></i> Menu & Stok <span class="lock-indicator" id="lock-badge-stock-desk">🔒</span>
       </button>
 
       <!-- Fitur Pro Terkunci (Bahan Upsell / Upgrade Biaya) -->
-      <button class="header-btn" onclick="App.triggerLockedFeature('Manajemen Shift Kasir', 'Catat modal kas awal saat buka gerai dan hitung otomatis selisih kas fisik di laci kasir saat tutup shift.')" title="Fitur Pro: Shift Kasir">
+      <button class="header-btn header-desktop-btn" onclick="App.triggerLockedFeature('Manajemen Shift Kasir', 'Catat modal kas awal saat buka gerai dan hitung otomatis selisih kas fisik di laci kasir saat tutup shift.')" title="Fitur Pro: Shift Kasir">
         <i class="ph ph-clock-user"></i> Shift 🔒
       </button>
 
-      <button class="header-btn" onclick="App.triggerLockedFeature('Pencatatan Pengeluaran & Laba', 'Catat pembelian bahan baku, gas, kemasan, dan es batu untuk memantau laba bersih harian otomatis.')" title="Fitur Pro: Catat Pengeluaran">
+      <button class="header-btn header-desktop-btn" onclick="App.triggerLockedFeature('Pencatatan Pengeluaran & Laba', 'Catat pembelian bahan baku, gas, kemasan, dan es batu untuk memantau laba bersih harian otomatis.')" title="Fitur Pro: Catat Pengeluaran">
         <i class="ph ph-wallet"></i> Biaya 🔒
       </button>
 
@@ -80,8 +80,82 @@
       <button class="header-btn header-btn-icon" id="btn-toggle-theme" title="Ganti Tema" aria-label="Ganti Tema">
         <i class="ph ph-moon"></i>
       </button>
+
+      <!-- Tombol Menu Tambahan di Layar HP (Hamburger) -->
+      <button class="btn-mobile-toggle" id="btn-mobile-nav-toggle" onclick="App.toggleMobileMenu()" title="Menu Kasir & Owner" aria-label="Menu Kasir">
+        <i class="ph ph-list"></i>
+      </button>
     </div>
   </header>
+
+  <!-- SUB-HEADER KHUSUS HP (TAMPIL DI LAYAR HP < 768px, SELALU TERLIHAT & ANTI-TERPOTONG) -->
+  <nav class="mobile-sub-header" id="mobile-sub-header" aria-label="Aksi Cepat Kasir">
+    <button class="mobile-nav-btn mobile-nav-btn-recap" onclick="App.openReportsModal()" title="Rekap Penjualan (Kunci alfian1991)">
+      <i class="ph ph-chart-line-up"></i>
+      <span>Rekap Penjualan</span>
+      <span class="lock-indicator" id="lock-badge-recap-mob">🔒</span>
+    </button>
+    <button class="mobile-nav-btn mobile-nav-btn-stock" onclick="App.openMenuStockModal()" title="Kelola Menu & Stok (Kunci alfian1991)">
+      <i class="ph ph-package"></i>
+      <span>Menu & Stok</span>
+      <span class="lock-indicator" id="lock-badge-stock-mob">🔒</span>
+    </button>
+  </nav>
+
+  <!-- DRAWER / MENU SAMPING HP UNTUK FITUR LAINNYA -->
+  <div class="mobile-drawer-overlay" id="mobile-drawer-overlay" onclick="App.toggleMobileMenu(false)"></div>
+  <div class="mobile-drawer-panel" id="mobile-drawer-panel">
+    <div class="mobile-drawer-header">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div class="brand-icon-box" style="width:34px; height:34px; font-size:18px;">
+          <i class="ph ph-cooking-pot"></i>
+        </div>
+        <div>
+          <div style="font-weight:800; font-size:14px; color:var(--text-primary);">Teras Foodies</div>
+          <div style="font-size:11px; color:var(--text-secondary);">Menu Kasir & Owner</div>
+        </div>
+      </div>
+      <button class="modal-close-btn" onclick="App.toggleMobileMenu(false)" aria-label="Tutup Menu">&times;</button>
+    </div>
+    <div class="mobile-drawer-body">
+      <button class="mobile-drawer-item" onclick="App.toggleMobileMenu(false); App.openReportsModal();">
+        <i class="ph ph-chart-line-up" style="color:var(--color-primary)"></i>
+        <span>Rekap Penjualan</span>
+        <span class="lock-indicator">🔒</span>
+      </button>
+      <button class="mobile-drawer-item" onclick="App.toggleMobileMenu(false); App.openMenuStockModal();">
+        <i class="ph ph-package" style="color:#059669"></i>
+        <span>Kelola Menu & Stok</span>
+        <span class="lock-indicator">🔒</span>
+      </button>
+      <button class="mobile-drawer-item" onclick="App.toggleMobileMenu(false); App.openSettingsModal();">
+        <i class="ph ph-gear"></i>
+        <span>Pengaturan & Database</span>
+      </button>
+      <button class="mobile-drawer-item" onclick="App.toggleMobileMenu(false); App.toggleTheme();">
+        <i class="ph ph-moon"></i>
+        <span>Ganti Tema (Gelap/Terang)</span>
+      </button>
+      <button class="mobile-drawer-item" id="drawer-btn-install" onclick="App.toggleMobileMenu(false); App.triggerPWAInstall();" style="display:none;">
+        <i class="ph ph-download-simple" style="color:var(--color-primary)"></i>
+        <span>Pasang Aplikasi di HP</span>
+      </button>
+      <div class="mobile-drawer-divider"></div>
+      <button class="mobile-drawer-item" onclick="App.toggleMobileMenu(false); App.triggerLockedFeature('Manajemen Shift Kasir', 'Catat modal kas awal saat buka gerai dan hitung otomatis selisih kas fisik di laci kasir saat tutup shift.');">
+        <i class="ph ph-clock-user"></i>
+        <span>Shift Kasir 🔒</span>
+      </button>
+      <button class="mobile-drawer-item" onclick="App.toggleMobileMenu(false); App.triggerLockedFeature('Pencatatan Pengeluaran & Laba', 'Catat pembelian bahan baku, gas, kemasan, dan es batu untuk memantau laba bersih harian otomatis.');">
+        <i class="ph ph-wallet"></i>
+        <span>Catat Pengeluaran 🔒</span>
+      </button>
+      <div class="mobile-drawer-divider"></div>
+      <button class="mobile-drawer-item" id="drawer-btn-lock" onclick="App.toggleMobileMenu(false); App.toggleOwnerLock();" style="font-size:12px; color:var(--text-secondary);">
+        <i class="ph ph-lock-key"></i>
+        <span id="drawer-lock-label">Status: Terkunci (alfian1991)</span>
+      </button>
+    </div>
+  </div>
 
   <!-- LAYOUT DUA KOLOM POS (DESKTOP & TABLET SPLIT SCREEN) -->
   <main class="pos-layout-container">
@@ -282,7 +356,12 @@
           <i class="ph ph-chart-bar" style="font-size:24px; color:var(--color-primary)"></i>
           <h3 class="modal-title">Rekapan Penjualan Otomatis</h3>
         </div>
-        <button class="modal-close-btn" onclick="App.closeReportsModal()" aria-label="Tutup">&times;</button>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <button class="btn-lock-reclose" onclick="App.lockOwnerAccess(); App.closeReportsModal();" title="Kunci Kembali Akses (alfian1991)">
+            <i class="ph ph-lock-key"></i> Kunci
+          </button>
+          <button class="modal-close-btn" onclick="App.closeReportsModal()" aria-label="Tutup">&times;</button>
+        </div>
       </div>
 
       <div class="modal-body" id="reports-content-area">
@@ -342,7 +421,12 @@
             <span style="font-size:12px; color:var(--text-secondary);">Katalog mandiri, Quick Restock, dan Audit Fisik Opname</span>
           </div>
         </div>
-        <button class="modal-close-btn" onclick="App.closeMenuStockModal()" aria-label="Tutup">&times;</button>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <button class="btn-lock-reclose" onclick="App.lockOwnerAccess(); App.closeMenuStockModal();" title="Kunci Kembali Akses (alfian1991)">
+            <i class="ph ph-lock-key"></i> Kunci
+          </button>
+          <button class="modal-close-btn" onclick="App.closeMenuStockModal()" aria-label="Tutup">&times;</button>
+        </div>
       </div>
 
       <!-- TAB SUB-NAVIGASI -->
