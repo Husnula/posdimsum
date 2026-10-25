@@ -6,6 +6,7 @@
 
 const App = {
   menuItems: [],
+  allMenuItems: [],
   activeCategory: 'Semua',
   searchKeyword: '',
   deferredInstallPrompt: null,
@@ -14,6 +15,9 @@ const App = {
   paymentMethod: 'Tunai',
   currentReportFilter: 'today',
   currentReportCustomDate: '',
+  activeStockTab: 'catalog',
+  restockChanges: {},
+  opnameDiffs: {},
 
   /**
    * Inisialisasi awal aplikasi saat dokumen selesai dimuat
@@ -163,13 +167,18 @@ const App = {
   },
 
   /**
-   * Render kartu menu ke dalam Grid sesuai filter kategori dan pencarian
+   * Render kartu menu ke dalam Grid sesuai filter kategori dan pencarian,
+   * dilengkapi indikator stok pintar (Aman, Menipis, Habis)
    */
   renderMenu() {
     const gridEl = document.getElementById('menu-grid-container');
     if (!gridEl) return;
 
-    let filtered = this.menuItems;
+    // Hanya tampilkan menu yang aktif di katalog kasir
+    let filtered = this.menuItems.filter((item) => {
+      const st = String(item.status || 'Aktif').toLowerCase();
+      return st !== 'nonaktif';
+    });
 
     // Filter Kategori
     if (this.activeCategory !== 'Semua') {
@@ -204,6 +213,24 @@ const App = {
 
     let html = '';
     filtered.forEach((item) => {
+      // Hitung status stok persediaan
+      const isUnlimited = (item.stok === 'Unlimited');
+      const stockNum = isUnlimited ? null : (Number(item.stok) || 0);
+      const minStock = Number(item.minStok) || 5;
+      const isOutOfStock = (!isUnlimited && stockNum <= 0);
+      const isLowStock = (!isUnlimited && stockNum > 0 && stockNum <= minStock);
+
+      let stockBadgeHtml = '';
+      if (isOutOfStock) {
+        stockBadgeHtml = `<span class="menu-stock-badge stock-out">HABIS</span>`;
+      } else if (isLowStock) {
+        stockBadgeHtml = `<span class="menu-stock-badge stock-low">⚠️ Sisa ${stockNum}</span>`;
+      } else if (!isUnlimited) {
+        stockBadgeHtml = `<span class="menu-stock-badge">Stok: ${stockNum}</span>`;
+      } else {
+        stockBadgeHtml = `<span class="menu-stock-badge" style="opacity:0.8;">Tersedia</span>`;
+      }
+
       // Pilih icon sesuai kategori
       let categoryBadgeClass = 'badge-dimsum';
       let iconName = 'ph-bowl-food';
@@ -221,8 +248,13 @@ const App = {
         iconName = 'ph-fire';
       }
 
+      const cardClass = isOutOfStock ? 'menu-card out-of-stock' : 'menu-card';
+      const clickAction = isOutOfStock
+        ? `App.notifyOutOfStock('${escapeHtml(item.nama)}')`
+        : `Cart.addItem(${JSON.stringify(item).replace(/"/g, '&quot;')})`;
+
       html += `
-        <div class="menu-card" onclick="Cart.addItem(${JSON.stringify(item).replace(/"/g, '&quot;')})" role="button" tabindex="0">
+        <div class="${cardClass}" onclick="${clickAction}" role="button" tabindex="0">
           <div class="menu-card-header">
             <span class="menu-category-badge ${categoryBadgeClass}">${escapeHtml(item.kategori)}</span>
             <span class="menu-variant-badge">${escapeHtml(item.varian)}</span>
@@ -238,15 +270,27 @@ const App = {
 
           <div class="menu-card-footer">
             <div class="menu-card-price">Rp${Number(item.harga).toLocaleString('id-ID')}</div>
-            <button class="btn-add-quick" aria-label="Tambah ${escapeHtml(item.nama)}">
-              <i class="ph ph-plus"></i>
+            <button class="btn-add-quick" aria-label="Tambah ${escapeHtml(item.nama)}" ${isOutOfStock ? 'disabled' : ''}>
+              ${isOutOfStock ? '<i class="ph ph-prohibit"></i>' : '<i class="ph ph-plus"></i>'}
             </button>
+          </div>
+
+          <div class="menu-card-stock-row">
+            ${stockBadgeHtml}
+            <span style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">${escapeHtml(item.id)}</span>
           </div>
         </div>
       `;
     });
 
     gridEl.innerHTML = html;
+  },
+
+  /**
+   * Peringatan visual instan jika kasir mengklik menu yang stoknya habis
+   */
+  notifyOutOfStock(namaMenu) {
+    Notifications.toast(`Menu "${namaMenu}" sedang HABIS dan tidak dapat ditambahkan ke pesanan.`, 'error', 3000);
   },
 
   /**
@@ -435,6 +479,11 @@ const App = {
     // Kirim ke Google Apps Script (atau antrean offline jika koneksi lambat)
     Notifications.toast('Memproses transaksi...', 'info', 1500);
     const syncRes = await SyncEngine.sendTransaction(transaction);
+
+    // Potong sisa stok lokal seketika agar kasir tidak menjual item yang sudah habis
+    if (transaction.items && transaction.items.length > 0) {
+      this.deductLocalStock(transaction.items);
+    }
 
     // Kosongkan keranjang
     Cart.clear();
@@ -933,6 +982,936 @@ const App = {
       const savedTheme = localStorage.getItem(APP_CONFIG.STORAGE_KEYS.THEME) || 'light';
       document.documentElement.setAttribute('data-theme', savedTheme);
       themeBtn.innerHTML = savedTheme === 'dark' ? '<i class="ph ph-sun"></i>' : '<i class="ph ph-moon"></i>';
+    }
+  },
+
+  /**
+   * Mengurangi stok lokal secara langsung setelah transaksi sukses
+   */
+  deductLocalStock(soldItems) {
+    if (!this.menuItems || !Array.isArray(this.menuItems)) return;
+    soldItems.forEach((sold) => {
+      const item = this.menuItems.find((m) => m.id === sold.id);
+      if (item && item.stok !== 'Unlimited' && typeof item.stok === 'number') {
+        item.stok = Math.max(0, item.stok - (Number(sold.qty) || 1));
+      }
+      if (this.allMenuItems && Array.isArray(this.allMenuItems)) {
+        const allItem = this.allMenuItems.find((m) => m.id === sold.id);
+        if (allItem && allItem.stok !== 'Unlimited' && typeof allItem.stok === 'number') {
+          allItem.stok = Math.max(0, allItem.stok - (Number(sold.qty) || 1));
+        }
+      }
+    });
+    DB.saveMenuCache(this.menuItems).catch(console.warn);
+    this.renderMenu();
+  },
+
+  /**
+   * Buka Modal Kelola Menu & Manajemen Stok
+   */
+  async openMenuStockModal() {
+    const modalEl = document.getElementById('menu-stock-modal');
+    if (!modalEl) return;
+    modalEl.classList.add('modal-open');
+
+    // Sinkronkan data menu terbaru dari API (termasuk yang nonaktif)
+    const apiUrl = getApiUrl();
+    if (navigator.onLine && !apiUrl.includes('AKfycbz_placeholder')) {
+      try {
+        const response = await fetch(`${apiUrl}?action=getMenu&all=1`);
+        const json = await response.json();
+        if (json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
+          this.allMenuItems = json.data;
+          this.menuItems = json.data;
+          await DB.saveMenuCache(this.menuItems);
+        }
+      } catch (err) {
+        console.warn('Gagal sinkron menu dari Apps Script, menggunakan data lokal:', err);
+      }
+    }
+
+    if (!this.allMenuItems || this.allMenuItems.length === 0) {
+      this.allMenuItems = JSON.parse(JSON.stringify(this.menuItems));
+    }
+
+    this.restockChanges = {};
+    this.opnameDiffs = {};
+    this.switchStockTab(this.activeStockTab || 'catalog');
+  },
+
+  /**
+   * Tutup Modal Kelola Menu & Manajemen Stok
+   */
+  closeMenuStockModal() {
+    const modalEl = document.getElementById('menu-stock-modal');
+    if (modalEl) modalEl.classList.remove('modal-open');
+    this.renderMenu();
+  },
+
+  /**
+   * Ganti sub-tab di Modal Manajemen Stok
+   */
+  switchStockTab(tabName) {
+    this.activeStockTab = tabName;
+    document.querySelectorAll('.stock-sub-tab').forEach((tab) => {
+      if (tab.dataset.tab === tabName) {
+        tab.classList.add('active');
+      } else {
+        tab.classList.remove('active');
+      }
+    });
+
+    document.querySelectorAll('.stock-tab-content').forEach((content) => {
+      content.classList.remove('active');
+    });
+
+    const activeContent = document.getElementById(`stock-tab-${tabName}`);
+    if (activeContent) activeContent.classList.add('active');
+
+    if (tabName === 'catalog') {
+      this.renderManageMenuTable();
+    } else if (tabName === 'restock') {
+      this.renderQuickRestockView();
+    } else if (tabName === 'opname') {
+      this.renderStockOpnameView();
+    }
+  },
+
+  /**
+   * Filter tabel kelola menu berdasarkan pencarian, kategori, dan status
+   */
+  filterManageMenu() {
+    this.renderManageMenuTable();
+  },
+
+  /**
+   * Render tabel interaktif kelola menu & harga
+   */
+  renderManageMenuTable() {
+    const tbody = document.getElementById('manage-menu-tbody');
+    if (!tbody) return;
+
+    const searchInput = document.getElementById('manage-search-input');
+    const catFilter = document.getElementById('manage-category-filter');
+    const statusFilter = document.getElementById('manage-status-filter');
+
+    const searchQ = searchInput ? searchInput.value.toLowerCase().trim() : '';
+    const selectedCat = catFilter ? catFilter.value : 'Semua';
+    const selectedStatus = statusFilter ? statusFilter.value : 'Semua';
+
+    let list = this.allMenuItems || this.menuItems;
+
+    if (selectedCat !== 'Semua') {
+      list = list.filter((m) => m.kategori.toLowerCase().includes(selectedCat.toLowerCase()));
+    }
+
+    if (selectedStatus !== 'Semua') {
+      list = list.filter((m) => {
+        const st = String(m.status || 'Aktif').toLowerCase();
+        return selectedStatus.toLowerCase() === st;
+      });
+    }
+
+    if (searchQ) {
+      list = list.filter((m) => 
+        m.nama.toLowerCase().includes(searchQ) || 
+        m.id.toLowerCase().includes(searchQ) ||
+        (m.varian && m.varian.toLowerCase().includes(searchQ))
+      );
+    }
+
+    if (list.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="9" style="text-align:center; padding:24px; color:var(--text-muted);">
+            Tidak ada menu yang sesuai dengan filter.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    let html = '';
+    list.forEach((item) => {
+      const isUnlimited = (item.stok === 'Unlimited');
+      const stockNum = isUnlimited ? null : (Number(item.stok) || 0);
+      const minStock = Number(item.minStok) || 5;
+      const isAktif = (String(item.status || 'Aktif').toLowerCase() !== 'nonaktif');
+
+      let stockBadge = '';
+      if (isUnlimited) {
+        stockBadge = `<span class="stock-badge-normal">Unlimited</span>`;
+      } else if (stockNum <= 0) {
+        stockBadge = `<span class="stock-badge-out">0 (Habis)</span>`;
+      } else if (stockNum <= minStock) {
+        stockBadge = `<span class="stock-badge-low">⚠️ ${stockNum}</span>`;
+      } else {
+        stockBadge = `<span class="stock-badge-normal">${stockNum} pcs</span>`;
+      }
+
+      const hargaJual = Number(item.harga) || 0;
+      const hargaModal = Number(item.modal) || 0;
+      const margin = hargaJual - hargaModal;
+      const marginColor = margin > 0 ? 'var(--color-success)' : 'var(--text-secondary)';
+
+      html += `
+        <tr>
+          <td><code style="font-family:var(--font-mono); font-size:11px; font-weight:700;">${escapeHtml(item.id)}</code></td>
+          <td>
+            <strong style="color:var(--text-primary); font-size:13px;">${escapeHtml(item.nama)}</strong>
+            <div style="font-size:11px; color:var(--text-secondary);">${escapeHtml(item.varian || 'Standar')}</div>
+          </td>
+          <td><span class="menu-category-badge badge-dimsum" style="font-size:11px;">${escapeHtml(item.kategori)}</span></td>
+          <td class="font-mono" style="font-weight:700;">Rp${hargaJual.toLocaleString('id-ID')}</td>
+          <td class="font-mono" style="color:var(--text-secondary);">Rp${hargaModal.toLocaleString('id-ID')}</td>
+          <td class="font-mono" style="font-weight:700; color:${marginColor};">
+            ${margin >= 0 ? '+' : ''}Rp${margin.toLocaleString('id-ID')}
+          </td>
+          <td>${stockBadge}</td>
+          <td>
+            <span class="status-pill ${isAktif ? 'active' : 'inactive'}" onclick="App.toggleMenuStatus('${item.id}')" title="Klik untuk ubah status">
+              <i class="ph ${isAktif ? 'ph-check-circle' : 'ph-eye-slash'}"></i> ${isAktif ? 'Aktif' : 'Nonaktif'}
+            </span>
+          </td>
+          <td style="text-align:right; white-space:nowrap;">
+            <button class="btn-action-icon" title="Edit Data Menu Lengkap" onclick="App.openEditMenuModal('${item.id}')">
+              <i class="ph ph-pencil-simple"></i>
+            </button>
+            <button class="btn-action-icon" title="Ubah Harga Jual Cepat" onclick="App.quickChangePrice('${item.id}')">
+              <i class="ph ph-currency-circle-dollar"></i>
+            </button>
+            <button class="btn-action-icon btn-action-delete" title="Nonaktifkan / Hapus Menu" onclick="App.confirmDeleteMenu('${item.id}')">
+              <i class="ph ph-trash"></i>
+            </button>
+          </td>
+        </tr>
+      `;
+    });
+
+    tbody.innerHTML = html;
+  },
+
+  /**
+   * Buka Modal Form Tambah Menu Baru
+   */
+  openAddMenuModal() {
+    document.getElementById('menu-form-modal-title').innerText = 'Tambah Menu Baru';
+    document.getElementById('menu-form-id').value = '';
+    document.getElementById('menu-form-nama').value = '';
+    document.getElementById('menu-form-kategori').value = 'Dimsum Original';
+    document.getElementById('menu-form-varian').value = '';
+    document.getElementById('menu-form-harga').value = '';
+    document.getElementById('menu-form-modal-val').value = '';
+    document.getElementById('menu-form-stok').value = '50';
+    document.getElementById('menu-form-min-stok').value = '5';
+    document.getElementById('menu-form-keterangan').value = '';
+    document.getElementById('menu-form-status').value = 'Aktif';
+
+    const customCatGroup = document.getElementById('menu-form-custom-category-group');
+    if (customCatGroup) customCatGroup.style.display = 'none';
+
+    this.setStockMode('tracked');
+    document.getElementById('menu-form-modal').classList.add('modal-open');
+  },
+
+  /**
+   * Buka Modal Form Edit Menu yang Sudah Ada
+   */
+  openEditMenuModal(id) {
+    const item = (this.allMenuItems || this.menuItems).find((m) => m.id === id);
+    if (!item) return;
+
+    document.getElementById('menu-form-modal-title').innerText = `Edit Menu: ${item.nama}`;
+    document.getElementById('menu-form-id').value = item.id;
+    document.getElementById('menu-form-nama').value = item.nama;
+
+    const catSelect = document.getElementById('menu-form-kategori');
+    let catFound = false;
+    for (let i = 0; i < catSelect.options.length; i++) {
+      if (catSelect.options[i].value === item.kategori) {
+        catSelect.selectedIndex = i;
+        catFound = true;
+        break;
+      }
+    }
+    const customCatGroup = document.getElementById('menu-form-custom-category-group');
+    if (!catFound) {
+      catSelect.value = '__NEW__';
+      if (customCatGroup) {
+        customCatGroup.style.display = 'block';
+        document.getElementById('menu-form-kategori-custom').value = item.kategori;
+      }
+    } else {
+      if (customCatGroup) customCatGroup.style.display = 'none';
+    }
+
+    document.getElementById('menu-form-varian').value = item.varian || '';
+    document.getElementById('menu-form-harga').value = item.harga || '';
+    document.getElementById('menu-form-modal-val').value = item.modal || '';
+
+    if (item.stok === 'Unlimited') {
+      this.setStockMode('unlimited');
+    } else {
+      this.setStockMode('tracked');
+      document.getElementById('menu-form-stok').value = item.stok !== undefined ? item.stok : 50;
+      document.getElementById('menu-form-min-stok').value = item.minStok !== undefined ? item.minStok : 5;
+    }
+
+    document.getElementById('menu-form-keterangan').value = item.keterangan || '';
+    document.getElementById('menu-form-status').value = item.status && item.status.toLowerCase() === 'nonaktif' ? 'Nonaktif' : 'Aktif';
+
+    document.getElementById('menu-form-modal').classList.add('modal-open');
+  },
+
+  /**
+   * Tutup Modal Form Tambah / Edit Menu
+   */
+  closeMenuFormModal() {
+    const modalEl = document.getElementById('menu-form-modal');
+    if (modalEl) modalEl.classList.remove('modal-open');
+  },
+
+  /**
+   * Handle pergantian dropdown kategori pada form menu
+   */
+  handleFormCategoryChange() {
+    const select = document.getElementById('menu-form-kategori');
+    const customGroup = document.getElementById('menu-form-custom-category-group');
+    if (select && customGroup) {
+      customGroup.style.display = select.value === '__NEW__' ? 'block' : 'none';
+    }
+  },
+
+  /**
+   * Atur mode stok pada form (tracked vs unlimited)
+   */
+  setStockMode(mode) {
+    const btnTracked = document.getElementById('btn-stock-mode-tracked');
+    const btnUnlimited = document.getElementById('btn-stock-mode-unlimited');
+    const fieldsRow = document.getElementById('menu-form-stock-fields');
+
+    if (mode === 'unlimited') {
+      if (btnUnlimited) btnUnlimited.classList.add('active');
+      if (btnTracked) btnTracked.classList.remove('active');
+      if (fieldsRow) fieldsRow.style.display = 'none';
+    } else {
+      if (btnTracked) btnTracked.classList.add('active');
+      if (btnUnlimited) btnUnlimited.classList.remove('active');
+      if (fieldsRow) fieldsRow.style.display = 'grid';
+    }
+  },
+
+  /**
+   * Simpan data dari Form Tambah / Edit Menu ke Google Sheets & Cache Lokal
+   */
+  async submitMenuForm() {
+    const menuId = document.getElementById('menu-form-id').value.trim();
+    const namaVal = document.getElementById('menu-form-nama').value.trim();
+    let kategoriVal = document.getElementById('menu-form-kategori').value;
+    if (kategoriVal === '__NEW__') {
+      kategoriVal = document.getElementById('menu-form-kategori-custom').value.trim() || 'Menu Tambahan';
+    }
+    const varianVal = document.getElementById('menu-form-varian').value.trim() || 'Standar';
+    const hargaVal = Number(document.getElementById('menu-form-harga').value);
+    const modalVal = Number(document.getElementById('menu-form-modal-val').value) || 0;
+
+    const isUnlimited = document.getElementById('btn-stock-mode-unlimited').classList.contains('active');
+    const stokVal = isUnlimited ? 'Unlimited' : (Number(document.getElementById('menu-form-stok').value) || 0);
+    const minStokVal = Number(document.getElementById('menu-form-min-stok').value) || 5;
+    const ketVal = document.getElementById('menu-form-keterangan').value.trim();
+    const statusVal = document.getElementById('menu-form-status').value;
+
+    if (!namaVal) {
+      Notifications.toast('Nama menu wajib diisi!', 'error', 2500);
+      return;
+    }
+    if (isNaN(hargaVal) || hargaVal <= 0) {
+      Notifications.toast('Harga jual harus lebih dari Rp0!', 'error', 2500);
+      return;
+    }
+
+    const payloadData = {
+      id: menuId,
+      nama: namaVal,
+      kategori: kategoriVal,
+      varian: varianVal,
+      harga: hargaVal,
+      modal: modalVal,
+      stok: stokVal,
+      status: statusVal,
+      keterangan: ketVal,
+      minStok: minStokVal,
+      operator: Cart.activeCashier
+    };
+
+    Notifications.toast('Menyimpan menu...', 'info', 1500);
+
+    const apiUrl = getApiUrl();
+    let savedOnline = false;
+
+    if (navigator.onLine && !apiUrl.includes('AKfycbz_placeholder')) {
+      try {
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'saveMenu', data: payloadData })
+        });
+        const res = await response.json();
+        if (res.status === 'success') {
+          savedOnline = true;
+          if (res.data && res.data.id) {
+            payloadData.id = res.data.id;
+          }
+        }
+      } catch (err) {
+        console.warn('Gagal menyimpan menu ke Sheets, disimpan lokal:', err);
+      }
+    }
+
+    // Update state memori lokal
+    if (!payloadData.id) {
+      payloadData.id = 'MNU-' + String(this.menuItems.length + 1).padStart(3, '0');
+    }
+
+    const existingIdx = this.menuItems.findIndex((m) => m.id === payloadData.id);
+    if (existingIdx > -1) {
+      this.menuItems[existingIdx] = { ...this.menuItems[existingIdx], ...payloadData };
+    } else {
+      this.menuItems.push(payloadData);
+    }
+
+    const allIdx = (this.allMenuItems || []).findIndex((m) => m.id === payloadData.id);
+    if (allIdx > -1) {
+      this.allMenuItems[allIdx] = { ...this.allMenuItems[allIdx], ...payloadData };
+    } else {
+      if (!this.allMenuItems) this.allMenuItems = [];
+      this.allMenuItems.push(payloadData);
+    }
+
+    await DB.saveMenuCache(this.menuItems);
+
+    this.closeMenuFormModal();
+    this.renderManageMenuTable();
+    this.renderMenu();
+
+    Notifications.toast(
+      savedOnline ? `Menu "${namaVal}" berhasil disimpan ke Google Sheets!` : `Menu "${namaVal}" berhasil disimpan di memori lokal!`,
+      'success',
+      3000
+    );
+  },
+
+  /**
+   * Popup cepat untuk mengubah harga jual menu seketika
+   */
+  async quickChangePrice(id) {
+    const item = (this.allMenuItems || this.menuItems).find((m) => m.id === id);
+    if (!item) return;
+
+    if (typeof Swal === 'undefined') return;
+
+    const { value: newPrice } = await Swal.fire({
+      title: `Ubah Harga: ${item.nama}`,
+      input: 'number',
+      inputLabel: `Harga saat ini: Rp${Number(item.harga).toLocaleString('id-ID')}`,
+      inputValue: item.harga,
+      inputAttributes: { min: '500', step: '500' },
+      showCancelButton: true,
+      confirmButtonText: 'Simpan Harga Baru',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#E03E1A',
+      inputValidator: (val) => {
+        if (!val || Number(val) <= 0) return 'Masukkan nominal harga yang valid!';
+      }
+    });
+
+    if (newPrice) {
+      item.harga = Number(newPrice);
+      const apiUrl = getApiUrl();
+      if (navigator.onLine && !apiUrl.includes('AKfycbz_placeholder')) {
+        fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'saveMenu', data: item })
+        }).catch(console.warn);
+      }
+      await DB.saveMenuCache(this.menuItems);
+      this.renderManageMenuTable();
+      this.renderMenu();
+      Notifications.toast(`Harga "${item.nama}" diubah menjadi Rp${Number(newPrice).toLocaleString('id-ID')}`, 'success', 2500);
+    }
+  },
+
+  /**
+   * Toggle status menu antara Aktif dan Nonaktif
+   */
+  async toggleMenuStatus(id) {
+    const item = (this.allMenuItems || this.menuItems).find((m) => m.id === id);
+    if (!item) return;
+
+    const currentStatus = String(item.status || 'Aktif').toLowerCase();
+    const newStatus = currentStatus === 'aktif' ? 'Nonaktif' : 'Aktif';
+    item.status = newStatus;
+
+    const apiUrl = getApiUrl();
+    if (navigator.onLine && !apiUrl.includes('AKfycbz_placeholder')) {
+      fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'saveMenu',
+          data: item
+        })
+      }).catch(console.warn);
+    }
+
+    await DB.saveMenuCache(this.menuItems);
+    this.renderManageMenuTable();
+    this.renderMenu();
+    Notifications.toast(`Menu "${item.nama}" disetel menjadi ${newStatus}.`, 'info', 2000);
+  },
+
+  /**
+   * Konfirmasi penghapusan menu: Pilihan Nonaktifkan (Soft Delete) vs Hapus Permanen (Hard Delete)
+   */
+  async confirmDeleteMenu(id) {
+    const item = (this.allMenuItems || this.menuItems).find((m) => m.id === id);
+    if (!item) return;
+
+    if (typeof Swal === 'undefined') return;
+
+    const result = await Swal.fire({
+      icon: 'warning',
+      title: `Hapus Menu: ${item.nama}?`,
+      text: 'Nonaktifkan menu agar riwayat transaksi masa lalu tetap aman, atau hapus permanen dari Google Sheets.',
+      showDenyButton: true,
+      showCancelButton: true,
+      confirmButtonText: 'Hapus Permanen',
+      denyButtonText: 'Nonaktifkan Saja (Aman)',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#DC2626',
+      denyButtonColor: '#475569',
+      cancelButtonColor: '#CBD5E1'
+    });
+
+    if (result.isConfirmed) {
+      // Hard Delete
+      const apiUrl = getApiUrl();
+      if (navigator.onLine && !apiUrl.includes('AKfycbz_placeholder')) {
+        fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'deleteMenu', id: item.id, hardDelete: true })
+        }).catch(console.warn);
+      }
+      this.menuItems = this.menuItems.filter((m) => m.id !== id);
+      this.allMenuItems = this.allMenuItems.filter((m) => m.id !== id);
+      await DB.saveMenuCache(this.menuItems);
+      this.renderManageMenuTable();
+      this.renderMenu();
+      Notifications.toast(`Menu "${item.nama}" dihapus permanen.`, 'success', 2500);
+    } else if (result.isDenied) {
+      // Soft Delete: Nonaktifkan
+      item.status = 'Nonaktif';
+      const apiUrl = getApiUrl();
+      if (navigator.onLine && !apiUrl.includes('AKfycbz_placeholder')) {
+        fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'deleteMenu', id: item.id, hardDelete: false })
+        }).catch(console.warn);
+      }
+      await DB.saveMenuCache(this.menuItems);
+      this.renderManageMenuTable();
+      this.renderMenu();
+      Notifications.toast(`Menu "${item.nama}" dinonaktifkan.`, 'info', 2500);
+    }
+  },
+
+  /**
+   * Render kartu pada Tab 2: Restock Cepat (+5, +10, +20, +50)
+   */
+  renderQuickRestockView() {
+    const container = document.getElementById('restock-items-container');
+    if (!container) return;
+
+    const opInput = document.getElementById('restock-operator');
+    if (opInput) opInput.value = Cart.activeCashier;
+
+    // Filter menu yang memiliki tracking stok (bukan unlimited)
+    const trackedItems = (this.allMenuItems || this.menuItems).filter((m) => m.stok !== 'Unlimited');
+
+    if (trackedItems.length === 0) {
+      container.innerHTML = `
+        <div style="grid-column:1/-1; text-align:center; padding:32px; color:var(--text-muted);">
+          Semua menu saat ini berstatus Unlimited (Tanpa Batas Stok).
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+    trackedItems.forEach((item) => {
+      const currentStock = Number(item.stok) || 0;
+      const changeDelta = Number(this.restockChanges[item.id]) || 0;
+      const resultingStock = currentStock + changeDelta;
+      const isModified = changeDelta !== 0;
+
+      html += `
+        <div class="restock-card ${isModified ? 'modified' : ''}" id="restock-card-${item.id}">
+          <div class="restock-card-header">
+            <div>
+              <div class="restock-item-name">${escapeHtml(item.nama)}</div>
+              <div class="restock-item-meta">${escapeHtml(item.kategori)} • ${escapeHtml(item.varian || 'Standar')}</div>
+            </div>
+            <span class="stock-badge-normal" style="font-size:11px;">Sisa: ${currentStock}</span>
+          </div>
+
+          <div class="restock-quick-btns">
+            <button type="button" class="quick-qty-btn" onclick="App.applyQuickRestock('${item.id}', 5)">+5</button>
+            <button type="button" class="quick-qty-btn" onclick="App.applyQuickRestock('${item.id}', 10)">+10</button>
+            <button type="button" class="quick-qty-btn" onclick="App.applyQuickRestock('${item.id}', 20)">+20</button>
+            <button type="button" class="quick-qty-btn" onclick="App.applyQuickRestock('${item.id}', 50)">+50</button>
+            <button type="button" class="quick-qty-btn" style="color:var(--color-danger);" onclick="App.resetItemRestock('${item.id}')" title="Reset">✕</button>
+          </div>
+
+          <div class="restock-input-row">
+            <span style="font-size:12px; font-weight:600; color:var(--text-secondary);">Tambah:</span>
+            <input type="number" class="restock-qty-input" value="${changeDelta}" min="0" onchange="App.setCustomRestock('${item.id}', this.value)">
+            <span class="restock-preview-badge">
+              ➜ Total: <strong>${resultingStock}</strong> ${changeDelta > 0 ? `(+${changeDelta})` : ''}
+            </span>
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+    this.updateRestockSummary();
+  },
+
+  /**
+   * Tambahkan angka cepat pada item restock (+5, +10, etc.)
+   */
+  applyQuickRestock(id, qtyDelta) {
+    const current = Number(this.restockChanges[id]) || 0;
+    this.restockChanges[id] = current + qtyDelta;
+    this.renderQuickRestockView();
+  },
+
+  /**
+   * Input manual kuantitas penambahan restock
+   */
+  setCustomRestock(id, customQty) {
+    const qty = Math.max(0, Number(customQty) || 0);
+    this.restockChanges[id] = qty;
+    this.renderQuickRestockView();
+  },
+
+  /**
+   * Reset perubahan restock untuk satu item
+   */
+  resetItemRestock(id) {
+    delete this.restockChanges[id];
+    this.renderQuickRestockView();
+  },
+
+  /**
+   * Perbarui teks ringkasan tombol restock
+   */
+  updateRestockSummary() {
+    const summaryEl = document.getElementById('restock-summary-text');
+    const changedIds = Object.keys(this.restockChanges).filter((id) => Number(this.restockChanges[id]) > 0);
+    const totalAdded = changedIds.reduce((sum, id) => sum + Number(this.restockChanges[id]), 0);
+
+    if (summaryEl) {
+      if (changedIds.length === 0) {
+        summaryEl.innerText = '0 item diubah';
+      } else {
+        summaryEl.innerText = `${changedIds.length} menu akan ditambah total +${totalAdded} porsi`;
+      }
+    }
+  },
+
+  /**
+   * Simpan penambahan stok batch ke Google Sheets dan log Mutasi_Stok
+   */
+  async submitQuickRestock() {
+    const changedIds = Object.keys(this.restockChanges).filter((id) => Number(this.restockChanges[id]) > 0);
+    if (changedIds.length === 0) {
+      Notifications.toast('Belum ada kuantitas stok yang ditambahkan.', 'warning', 2500);
+      return;
+    }
+
+    const opInput = document.getElementById('restock-operator');
+    const noteInput = document.getElementById('restock-notes');
+    const operator = opInput ? opInput.value.trim() : Cart.activeCashier;
+    const keterangan = noteInput ? noteInput.value.trim() : 'Restock Cepat Harian';
+
+    const itemsToUpdate = [];
+    changedIds.forEach((id) => {
+      const item = (this.allMenuItems || this.menuItems).find((m) => m.id === id);
+      if (item) {
+        const delta = Number(this.restockChanges[id]);
+        const currentStock = Number(item.stok) || 0;
+        const newStock = currentStock + delta;
+        itemsToUpdate.push({
+          id: item.id,
+          nama: item.nama,
+          qtyMutasi: delta,
+          stokBaru: newStock
+        });
+      }
+    });
+
+    Notifications.toast('Menyimpan penambahan stok...', 'info', 2000);
+
+    const apiUrl = getApiUrl();
+    let savedOnline = false;
+
+    if (navigator.onLine && !apiUrl.includes('AKfycbz_placeholder')) {
+      try {
+        const res = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'updateStockBatch',
+            tipeMutasi: 'RESTOCK_MASUK',
+            operator: operator,
+            keterangan: keterangan,
+            items: itemsToUpdate
+          })
+        });
+        const json = await res.json();
+        if (json.status === 'success') savedOnline = true;
+      } catch (err) {
+        console.warn('Gagal sinkron restock ke Sheets, disimpan lokal:', err);
+      }
+    }
+
+    // Terapkan ke state lokal
+    itemsToUpdate.forEach((up) => {
+      const item = (this.allMenuItems || this.menuItems).find((m) => m.id === up.id);
+      if (item) item.stok = up.stokBaru;
+    });
+
+    await DB.saveMenuCache(this.menuItems);
+    this.restockChanges = {};
+    this.renderQuickRestockView();
+    this.renderMenu();
+
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({
+        icon: 'success',
+        title: 'Restock Berhasil Disimpan!',
+        text: `${itemsToUpdate.length} item menu telah diperbarui stoknya ${savedOnline ? 'dan tercatat di sheet Mutasi_Stok Google Sheets.' : 'di memori lokal.'}`,
+        confirmButtonColor: '#E03E1A'
+      });
+    }
+  },
+
+  /**
+   * Render tabel pada Tab 3: Stok Opname Shift (Audit Fisik Akhir Shift)
+   */
+  renderStockOpnameView() {
+    const tbody = document.getElementById('opname-tbody');
+    if (!tbody) return;
+
+    const opInput = document.getElementById('opname-operator');
+    if (opInput) opInput.value = Cart.activeCashier;
+
+    const trackedItems = (this.allMenuItems || this.menuItems).filter((m) => m.stok !== 'Unlimited');
+
+    if (trackedItems.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="5" style="text-align:center; padding:24px; color:var(--text-muted);">
+            Semua menu berstatus Unlimited. Tidak ada stok fisik yang perlu di-opname.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    let html = '';
+    trackedItems.forEach((item) => {
+      const currentStock = Number(item.stok) || 0;
+      const opData = this.opnameDiffs[item.id] || { physical: currentStock, diff: 0, reason: '' };
+
+      let diffClass = 'zero';
+      let diffSign = '';
+      if (opData.diff < 0) {
+        diffClass = 'minus';
+        diffSign = '';
+      } else if (opData.diff > 0) {
+        diffClass = 'plus';
+        diffSign = '+';
+      }
+
+      html += `
+        <tr>
+          <td>
+            <strong>${escapeHtml(item.nama)}</strong>
+            <div style="font-size:11px; color:var(--text-secondary);">${escapeHtml(item.kategori)} • ${escapeHtml(item.varian || 'Standar')}</div>
+          </td>
+          <td class="font-mono" style="font-weight:700; font-size:14px;">
+            ${currentStock} pcs
+          </td>
+          <td style="width:120px;">
+            <input type="number" class="meta-input font-mono" style="width:90px; text-align:center; font-weight:700;" value="${opData.physical}" min="0" onchange="App.onOpnameInputChange('${item.id}', this.value)">
+          </td>
+          <td>
+            <span class="opname-diff-pill ${diffClass}" id="opname-diff-badge-${item.id}">
+              ${diffSign}${opData.diff}
+            </span>
+          </td>
+          <td>
+            <select class="meta-input" style="font-size:12px; height:36px;" id="opname-reason-${item.id}" onchange="App.onOpnameReasonChange('${item.id}', this.value)">
+              <option value="Sesuai">Sesuai / Pas</option>
+              <option value="Basi / Kukus Rusak">Basi / Kukus Rusak</option>
+              <option value="Bonus Pelanggan">Bonus Pelanggan</option>
+              <option value="Selisih Hitung">Selisih Hitung / Lupa Catat</option>
+              <option value="Konsumsi Sendiri">Konsumsi Sendiri / Kru</option>
+              <option value="Lainnya">Lainnya</option>
+            </select>
+          </td>
+        </tr>
+      `;
+    });
+
+    tbody.innerHTML = html;
+    this.updateOpnameSummary();
+  },
+
+  /**
+   * Handle perubahan input fisik aktual di stok opname
+   */
+  onOpnameInputChange(id, physicalValue) {
+    const item = (this.allMenuItems || this.menuItems).find((m) => m.id === id);
+    if (!item) return;
+
+    const currentStock = Number(item.stok) || 0;
+    const physical = Math.max(0, Number(physicalValue) || 0);
+    const diff = physical - currentStock;
+
+    if (!this.opnameDiffs[id]) {
+      this.opnameDiffs[id] = { physical, diff, reason: 'Sesuai' };
+    } else {
+      this.opnameDiffs[id].physical = physical;
+      this.opnameDiffs[id].diff = diff;
+    }
+
+    const badgeEl = document.getElementById(`opname-diff-badge-${id}`);
+    if (badgeEl) {
+      badgeEl.className = 'opname-diff-pill ' + (diff === 0 ? 'zero' : diff < 0 ? 'minus' : 'plus');
+      badgeEl.innerText = (diff > 0 ? '+' : '') + diff;
+    }
+
+    this.updateOpnameSummary();
+  },
+
+  /**
+   * Handle pilihan alasan selisih opname
+   */
+  onOpnameReasonChange(id, reasonVal) {
+    if (!this.opnameDiffs[id]) {
+      const item = (this.allMenuItems || this.menuItems).find((m) => m.id === id);
+      const currentStock = item ? (Number(item.stok) || 0) : 0;
+      this.opnameDiffs[id] = { physical: currentStock, diff: 0, reason: reasonVal };
+    } else {
+      this.opnameDiffs[id].reason = reasonVal;
+    }
+  },
+
+  /**
+   * Perbarui teks ringkasan tombol eksekusi opname
+   */
+  updateOpnameSummary() {
+    const summaryEl = document.getElementById('opname-summary-text');
+    const itemsWithDiff = Object.keys(this.opnameDiffs).filter((id) => this.opnameDiffs[id].diff !== 0);
+
+    if (summaryEl) {
+      if (itemsWithDiff.length === 0) {
+        summaryEl.innerText = 'Semua stok fisik cocok dengan sistem.';
+      } else {
+        summaryEl.innerText = `Terdeteksi ${itemsWithDiff.length} menu dengan selisih stok fisik.`;
+      }
+    }
+  },
+
+  /**
+   * Eksekusi penyesuaian stok opname shift ke Google Sheets
+   */
+  async submitStockOpname() {
+    const itemsWithDiff = Object.keys(this.opnameDiffs).filter((id) => this.opnameDiffs[id].diff !== 0);
+    if (itemsWithDiff.length === 0) {
+      Notifications.toast('Seluruh stok fisik sudah sesuai dengan angka sistem.', 'info', 2500);
+      return;
+    }
+
+    const opInput = document.getElementById('opname-operator');
+    const noteInput = document.getElementById('opname-notes');
+    const operator = opInput ? opInput.value.trim() : Cart.activeCashier;
+    const keterangan = noteInput ? noteInput.value.trim() : 'Stok Opname Shift Kasir';
+
+    const itemsToUpdate = [];
+    itemsWithDiff.forEach((id) => {
+      const item = (this.allMenuItems || this.menuItems).find((m) => m.id === id);
+      if (item) {
+        const op = this.opnameDiffs[id];
+        itemsToUpdate.push({
+          id: item.id,
+          nama: item.nama,
+          stokBaru: op.physical,
+          qtyMutasi: op.diff,
+          alasan: op.reason || 'Selisih Opname'
+        });
+      }
+    });
+
+    Notifications.toast('Menyesuaikan stok opname...', 'info', 2000);
+
+    const apiUrl = getApiUrl();
+    let savedOnline = false;
+
+    if (navigator.onLine && !apiUrl.includes('AKfycbz_placeholder')) {
+      try {
+        const res = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'updateStockBatch',
+            tipeMutasi: 'OPNAME_PENYESUAIAN',
+            operator: operator,
+            keterangan: keterangan,
+            items: itemsToUpdate
+          })
+        });
+        const json = await res.json();
+        if (json.status === 'success') savedOnline = true;
+      } catch (err) {
+        console.warn('Gagal sinkron opname ke Sheets, disimpan lokal:', err);
+      }
+    }
+
+    // Terapkan ke state lokal
+    itemsToUpdate.forEach((up) => {
+      const item = (this.allMenuItems || this.menuItems).find((m) => m.id === up.id);
+      if (item) item.stok = up.stokBaru;
+    });
+
+    await DB.saveMenuCache(this.menuItems);
+    this.opnameDiffs = {};
+    this.renderStockOpnameView();
+    this.renderMenu();
+
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({
+        icon: 'success',
+        title: 'Stok Opname Berhasil Disesuaikan!',
+        text: `${itemsToUpdate.length} item telah dikoreksi stoknya ${savedOnline ? 'dan dicatat ke riwayat Mutasi_Stok.' : 'di memori lokal.'}`,
+        confirmButtonColor: '#E03E1A'
+      });
     }
   }
 };

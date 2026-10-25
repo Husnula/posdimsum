@@ -11,15 +11,29 @@ const Cart = {
   activeCashier: 'Kasir',
 
   /**
-   * Menambahkan item menu ke dalam keranjang
+   * Menambahkan item menu ke dalam keranjang dengan validasi ketersediaan stok
    */
   addItem(menuItem) {
     if (!menuItem) return;
+
+    // Validasi jika stok habis
+    if (menuItem.stok !== 'Unlimited' && typeof menuItem.stok === 'number') {
+      if (menuItem.stok <= 0) {
+        Notifications.toast(`Menu "${menuItem.nama}" sedang habis!`, 'error', 2500);
+        return;
+      }
+    }
 
     // Cek apakah item dengan ID yang sama persis sudah ada di keranjang
     const existingIndex = this.items.findIndex((i) => i.id === menuItem.id);
 
     if (existingIndex > -1) {
+      if (menuItem.stok !== 'Unlimited' && typeof menuItem.stok === 'number') {
+        if (this.items[existingIndex].qty + 1 > menuItem.stok) {
+          Notifications.toast(`Stok "${menuItem.nama}" tidak mencukupi (Sisa ${menuItem.stok} porsi)`, 'warning', 2500);
+          return;
+        }
+      }
       this.items[existingIndex].qty += 1;
       this.items[existingIndex].subtotal = this.items[existingIndex].qty * this.items[existingIndex].harga;
     } else {
@@ -40,10 +54,21 @@ const Cart = {
   },
 
   /**
-   * Mengubah jumlah kuantitas item (+1 atau -1)
+   * Mengubah jumlah kuantitas item (+1 atau -1) dengan validasi batas stok
    */
   updateQty(index, delta) {
     if (this.items[index]) {
+      if (delta > 0 && typeof App !== 'undefined' && App.menuItems) {
+        const itemInfo = this.items[index];
+        const menuItem = App.menuItems.find((m) => m.id === itemInfo.id);
+        if (menuItem && menuItem.stok !== 'Unlimited' && typeof menuItem.stok === 'number') {
+          if (itemInfo.qty + delta > menuItem.stok) {
+            Notifications.toast(`Stok "${itemInfo.nama}" tidak mencukupi (Sisa ${menuItem.stok} porsi)`, 'warning', 2500);
+            return;
+          }
+        }
+      }
+
       this.items[index].qty += delta;
       if (this.items[index].qty <= 0) {
         this.removeItem(index);

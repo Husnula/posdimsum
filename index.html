@@ -57,6 +57,11 @@
         <i class="ph ph-chart-line-up" style="color:var(--color-primary)"></i> Rekap Penjualan
       </button>
 
+      <!-- Tombol Kelola Menu & Stok (CRUD Menu, Restock Cepat & Opname) -->
+      <button class="header-btn" onclick="App.openMenuStockModal()" title="Kelola Menu & Manajemen Stok">
+        <i class="ph ph-package" style="color:var(--color-primary)"></i> Menu & Stok
+      </button>
+
       <!-- Fitur Pro Terkunci (Bahan Upsell / Upgrade Biaya) -->
       <button class="header-btn" onclick="App.triggerLockedFeature('Manajemen Shift Kasir', 'Catat modal kas awal saat buka gerai dan hitung otomatis selisih kas fisik di laci kasir saat tutup shift.')" title="Fitur Pro: Shift Kasir">
         <i class="ph ph-clock-user"></i> Shift 🔒
@@ -320,6 +325,263 @@
       <div class="modal-footer">
         <button class="btn-secondary" onclick="App.closeSettingsModal()">Batal</button>
         <button class="btn-primary" onclick="App.saveSettings()">Simpan Pengaturan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL KELOLA MENU & MANAJEMEN STOK (CRUD, RESTOCK CEPAT & OPNAME) -->
+  <div class="modal-backdrop" id="menu-stock-modal">
+    <div class="modal-box modal-box-large">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div class="modal-icon-badge">
+            <i class="ph ph-package" style="font-size:22px; color:var(--color-primary)"></i>
+          </div>
+          <div>
+            <h3 class="modal-title">Kelola Menu & Manajemen Stok</h3>
+            <span style="font-size:12px; color:var(--text-secondary);">Katalog mandiri, Quick Restock, dan Audit Fisik Opname</span>
+          </div>
+        </div>
+        <button class="modal-close-btn" onclick="App.closeMenuStockModal()" aria-label="Tutup">&times;</button>
+      </div>
+
+      <!-- TAB SUB-NAVIGASI -->
+      <div class="stock-sub-tabs">
+        <button class="stock-sub-tab active" data-tab="catalog" onclick="App.switchStockTab('catalog')">
+          <i class="ph ph-list-dashes"></i> Katalog Menu & Harga
+        </button>
+        <button class="stock-sub-tab" data-tab="restock" onclick="App.switchStockTab('restock')">
+          <i class="ph ph-lightning"></i> Restock Cepat
+        </button>
+        <button class="stock-sub-tab" data-tab="opname" onclick="App.switchStockTab('opname')">
+          <i class="ph ph-clipboard-text"></i> Stok Opname Shift
+        </button>
+      </div>
+
+      <div class="modal-body" style="padding: 16px 20px;">
+        <!-- TAB 1: KATALOG MENU -->
+        <div class="stock-tab-content active" id="stock-tab-catalog">
+          <div class="catalog-manage-toolbar">
+            <div class="toolbar-search">
+              <i class="ph ph-magnifying-glass"></i>
+              <input type="text" id="manage-search-input" placeholder="Cari menu di katalog..." oninput="App.filterManageMenu()">
+            </div>
+            <select id="manage-category-filter" class="toolbar-select" onchange="App.filterManageMenu()">
+              <option value="Semua">Semua Kategori</option>
+              <option value="Dimsum Original">Dimsum Ori</option>
+              <option value="Dimsum Mentai">Dimsum Mentai</option>
+              <option value="Dimsum Hot Lava">Dimsum Hot Lava</option>
+              <option value="Wonton">Wonton</option>
+              <option value="Basreng">Basreng</option>
+              <option value="Mie Jebew">Mie Jebew</option>
+              <option value="Minuman">Minuman</option>
+              <option value="Birthday Dimsum">Birthday Dimsum</option>
+            </select>
+            <select id="manage-status-filter" class="toolbar-select" onchange="App.filterManageMenu()">
+              <option value="Semua">Semua Status</option>
+              <option value="Aktif">Aktif Saja</option>
+              <option value="Nonaktif">Nonaktif Saja</option>
+            </select>
+            <button class="btn-primary btn-add-menu" onclick="App.openAddMenuModal()">
+              <i class="ph ph-plus-circle"></i> Tambah Menu
+            </button>
+          </div>
+
+          <div class="table-responsive-wrapper">
+            <table class="tf-data-table" id="manage-menu-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Menu & Varian</th>
+                  <th>Kategori</th>
+                  <th>Harga Jual</th>
+                  <th>HPP / Modal</th>
+                  <th>Margin</th>
+                  <th>Stok</th>
+                  <th>Status</th>
+                  <th style="text-align:right;">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="manage-menu-tbody">
+                <!-- Dirender dinamis oleh App.renderManageMenuTable() -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TAB 2: RESTOCK CEPAT -->
+        <div class="stock-tab-content" id="stock-tab-restock">
+          <div class="stock-helper-card">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <i class="ph ph-info" style="font-size:20px; color:var(--color-primary);"></i>
+              <span style="font-size:13px; font-weight:600;">Tambah stok fisik yang masuk dengan cepat (+5, +10, +20, +50)</span>
+            </div>
+            <div class="restock-meta-row">
+              <div class="meta-field">
+                <label>Operator / Kasir:</label>
+                <input type="text" id="restock-operator" class="meta-input" value="Alfian">
+              </div>
+              <div class="meta-field" style="flex:2;">
+                <label>Catatan Restock:</label>
+                <input type="text" id="restock-notes" class="meta-input" placeholder="Contoh: Belanja bahan pagi / Dropping gudang" value="Restock Harian">
+              </div>
+            </div>
+          </div>
+
+          <div class="restock-grid" id="restock-items-container">
+            <!-- Dirender dinamis oleh App.renderQuickRestockView() -->
+          </div>
+
+          <div class="stock-action-bar">
+            <div class="action-bar-summary" id="restock-summary-text">0 item diubah</div>
+            <button class="btn-primary" id="btn-save-restock" onclick="App.submitQuickRestock()">
+              <i class="ph ph-check"></i> Simpan Penambahan Stok
+            </button>
+          </div>
+        </div>
+
+        <!-- TAB 3: STOK OPNAME SHIFT -->
+        <div class="stock-tab-content" id="stock-tab-opname">
+          <div class="stock-helper-card">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <i class="ph ph-clipboard-text" style="font-size:20px; color:var(--color-accent);"></i>
+              <span style="font-size:13px; font-weight:600;">Audit fisik sisa porsi di akhir shift untuk deteksi selisih porsi & food waste.</span>
+            </div>
+            <div class="restock-meta-row">
+              <div class="meta-field">
+                <label>Petugas Audit / Kasir:</label>
+                <input type="text" id="opname-operator" class="meta-input" value="Alfian">
+              </div>
+              <div class="meta-field" style="flex:2;">
+                <label>Catatan Shift / Opname:</label>
+                <input type="text" id="opname-notes" class="meta-input" placeholder="Contoh: Opname tutup shift sore" value="Opname Tutup Shift">
+              </div>
+            </div>
+          </div>
+
+          <div class="table-responsive-wrapper">
+            <table class="tf-data-table" id="opname-table">
+              <thead>
+                <tr>
+                  <th>Menu & Varian</th>
+                  <th>Stok Sistem</th>
+                  <th>Fisik Aktual</th>
+                  <th>Selisih</th>
+                  <th>Alasan Selisih</th>
+                </tr>
+              </thead>
+              <tbody id="opname-tbody">
+                <!-- Dirender dinamis oleh App.renderStockOpnameView() -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="stock-action-bar">
+            <div class="action-bar-summary" id="opname-summary-text">Semua stok cocok</div>
+            <button class="btn-primary" id="btn-save-opname" onclick="App.submitStockOpname()">
+              <i class="ph ph-check-square"></i> Sesuaikan & Simpan Opname
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL FORM TAMBAH / EDIT MENU (CREATE & UPDATE) -->
+  <div class="modal-backdrop" id="menu-form-modal">
+    <div class="modal-box" style="max-width:540px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="menu-form-modal-title">Tambah Menu Baru</h3>
+        <button class="modal-close-btn" onclick="App.closeMenuFormModal()" aria-label="Tutup">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <input type="hidden" id="menu-form-id">
+
+        <div class="form-group">
+          <label class="form-label">Nama Menu <span style="color:var(--color-primary)">*</span></label>
+          <input type="text" id="menu-form-nama" class="form-input" placeholder="Contoh: Es Chocolatos" required>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-label">Kategori <span style="color:var(--color-primary)">*</span></label>
+            <select id="menu-form-kategori" class="form-select" onchange="App.handleFormCategoryChange()">
+              <option value="Dimsum Original">Dimsum Original</option>
+              <option value="Dimsum Mentai">Dimsum Mentai</option>
+              <option value="Dimsum Hot Lava">Dimsum Hot Lava</option>
+              <option value="Wonton">Wonton</option>
+              <option value="Basreng">Basreng</option>
+              <option value="Mie Jebew">Mie Jebew</option>
+              <option value="Minuman">Minuman</option>
+              <option value="Birthday Dimsum">Birthday Dimsum</option>
+              <option value="__NEW__">+ Tambah Kategori Baru...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Varian / Porsi</label>
+            <input type="text" id="menu-form-varian" class="form-input" placeholder="Contoh: Gelas / 4 pcs / Jumbo">
+          </div>
+        </div>
+
+        <div class="form-group" id="menu-form-custom-category-group" style="display:none;">
+          <label class="form-label">Nama Kategori Baru</label>
+          <input type="text" id="menu-form-kategori-custom" class="form-input" placeholder="Contoh: Paket Hemat">
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-label">Harga Jual (Rp) <span style="color:var(--color-primary)">*</span></label>
+            <input type="number" id="menu-form-harga" class="form-input font-mono" placeholder="5000" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Harga Modal / HPP (Rp)</label>
+            <input type="number" id="menu-form-modal-val" class="form-input font-mono" placeholder="2500">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Mode Stok Persediaan</label>
+          <div class="segmented-control">
+            <button type="button" class="segment-btn active" id="btn-stock-mode-tracked" onclick="App.setStockMode('tracked')">
+              <i class="ph ph-package"></i> Dihitung (Berstok)
+            </button>
+            <button type="button" class="segment-btn" id="btn-stock-mode-unlimited" onclick="App.setStockMode('unlimited')">
+              <i class="ph ph-infinity"></i> Tanpa Batas (Unlimited)
+            </button>
+          </div>
+        </div>
+
+        <div class="form-row-2" id="menu-form-stock-fields">
+          <div class="form-group">
+            <label class="form-label">Stok Fisik Tersedia</label>
+            <input type="number" id="menu-form-stok" class="form-input font-mono" placeholder="50" value="50">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Batas Peringatan Menipis</label>
+            <input type="number" id="menu-form-min-stok" class="form-input font-mono" placeholder="5" value="5">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Keterangan / Deskripsi Singkat</label>
+          <input type="text" id="menu-form-keterangan" class="form-input" placeholder="Contoh: Es cokelat nikmat dingin segar">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Status Menu</label>
+          <select id="menu-form-status" class="form-select">
+            <option value="Aktif">Aktif (Tampil di Katalog Kasir)</option>
+            <option value="Nonaktif">Nonaktif (Disembunyikan)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="App.closeMenuFormModal()">Batal</button>
+        <button class="btn-primary" id="btn-submit-menu-form" onclick="App.submitMenuForm()">
+          <i class="ph ph-floppy-disk"></i> Simpan Menu
+        </button>
       </div>
     </div>
   </div>
