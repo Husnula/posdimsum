@@ -89,6 +89,7 @@ function setupDatabase() {
       ['MNU-022', 'Minuman', 'Es Beng-Beng', 'Gelas', 5000, 2500, 999, 'Aktif', '', 'Es cokelat lezat beng-beng drink'],
       ['MNU-023', 'Minuman', 'Es Jeruk Peras', 'Gelas', 5000, 2000, 999, 'Aktif', '', 'Es jeruk peras alami segar asam manis'],
       ['MNU-024', 'Minuman', 'Es Goodday', 'Gelas', 5000, 2500, 999, 'Aktif', '', 'Es kopi moccacino goodday segar'],
+      ['MNU-027', 'Minuman', 'Es Chocolatos', 'Gelas', 5000, 2500, 999, 'Aktif', '', 'Es cokelat chocolatos lezat dingin segar'],
       
       // Birthday Dimsum
       ['MNU-025', 'Birthday Dimsum', 'Dimsum Birthday Isi 6', 'Isi 6', 25000, 15000, 999, 'Aktif', '', 'Dimsum saus mentai, free chili oil, sendok, topping, tissue, paper, tulisan keju max 5 simbol'],
@@ -623,6 +624,45 @@ function getEmptyReport(date) {
     itemsTerjual: [],
     transaksiTerbaru: []
   };
+}
+
+/**
+ * FUNGSI HELPER: Tambah Menu Otomatis via Apps Script Editor
+ * Jalankan fungsi ini langsung dari editor Apps Script (pilih fungsi lalu klik Run)
+ */
+function tambahMenuChocolatos() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAMES.MENU);
+  if (!sheet) {
+    throw new Error('Sheet Menu tidak ditemukan.');
+  }
+
+  // Cek apakah MNU-027 sudah ada agar tidak duplikat
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === 'MNU-027' || String(data[i][2]).toLowerCase() === 'es chocolatos') {
+      Logger.log('Menu Es Chocolatos sudah ada di baris ke-' + (i + 1));
+      return 'Menu sudah ada';
+    }
+  }
+
+  // Data: ID_Menu, Kategori, Nama_Menu, Varian, Harga_Jual, Harga_Modal, Stok_Tersedia, Status_Aktif, Gambar_URL, Keterangan
+  const itemBaru = [
+    'MNU-027',
+    'Minuman',
+    'Es Chocolatos',
+    'Gelas',
+    5000,
+    2500,
+    999,
+    'Aktif',
+    '',
+    'Es cokelat chocolatos lezat dingin segar'
+  ];
+
+  sheet.appendRow(itemBaru);
+  Logger.log('Sukses! Menu Es Chocolatos berhasil ditambahkan ke sheet Menu.');
+  return 'Sukses ditambahkan';
 }
 
 /**

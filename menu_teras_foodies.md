@@ -60,6 +60,7 @@
   Es Beng-Beng       Rp5.000
   Es Jeruk Peras     Rp5.000
   Es Goodday         Rp5.000
+  Es Chocolatos      Rp5.000
 
 ## Birthday Dimsum
 

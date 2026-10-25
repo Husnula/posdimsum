@@ -156,6 +156,7 @@ const App = {
       { id: 'MNU-022', kategori: 'Minuman', nama: 'Es Beng-Beng', varian: 'Gelas', harga: 5000, stok: 999, keterangan: 'Es cokelat lezat beng-beng drink' },
       { id: 'MNU-023', kategori: 'Minuman', nama: 'Es Jeruk Peras', varian: 'Gelas', harga: 5000, stok: 999, keterangan: 'Es jeruk peras alami segar asam manis' },
       { id: 'MNU-024', kategori: 'Minuman', nama: 'Es Goodday', varian: 'Gelas', harga: 5000, stok: 999, keterangan: 'Es kopi moccacino goodday segar' },
+      { id: 'MNU-027', kategori: 'Minuman', nama: 'Es Chocolatos', varian: 'Gelas', harga: 5000, stok: 999, keterangan: 'Es cokelat chocolatos lezat dingin segar' },
       { id: 'MNU-025', kategori: 'Birthday Dimsum', nama: 'Dimsum Birthday Isi 6', varian: 'Isi 6', harga: 25000, stok: 999, keterangan: 'Saus mentai, free chili oil, sendok, topping, tissue, tulisan keju' },
       { id: 'MNU-026', kategori: 'Birthday Dimsum', nama: 'Dimsum Birthday Isi 16', varian: 'Isi 16', harga: 65000, stok: 999, keterangan: 'Saus mentai, free chili oil, sendok, topping, tissue, tulisan keju' }
     ];
