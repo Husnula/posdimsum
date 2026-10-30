@@ -242,11 +242,30 @@ input, select {
   background: var(--color-primary);
   color: #FFF;
   border-color: var(--color-primary);
-  display: none;
+  display: inline-flex;
 }
 
 .header-btn-install:hover {
   background: var(--color-primary-hover);
+}
+
+.header-mobile-install-btn {
+  display: none;
+}
+
+/* Sembunyikan seluruh tombol install jika aplikasi sudah berjalan dalam mode Standalone PWA */
+body.pwa-installed .header-btn-install,
+body.pwa-installed .header-mobile-install-btn,
+body.pwa-installed #drawer-btn-install {
+  display: none !important;
+}
+
+/* Dukungan Safe-Area untuk iOS / iPadOS & Android Standalone */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .app-header {
+    padding-top: env(safe-area-inset-top);
+    height: calc(64px + env(safe-area-inset-top));
+  }
 }
 
 /* LAYOUT POS UTAMA (SPLIT SCREEN TABLET) */
@@ -1691,6 +1710,11 @@ input, select {
   /* Sembunyikan tombol teks panjang desktop di header saat di HP */
   .header-desktop-btn {
     display: none !important;
+  }
+
+  /* Tampilkan tombol install ikon ringkas di HP jika belum terinstal */
+  .header-mobile-install-btn {
+    display: inline-flex;
   }
 
   /* Tampilkan tombol menu drawer di HP */

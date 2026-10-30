@@ -51,31 +51,103 @@ const App = {
   },
 
   /**
-   * Mendaftarkan Service Worker dan menangkap prompt install PWA Tablet
+   * Memeriksa apakah aplikasi sedang berjalan dalam mode Standalone PWA (terinstal)
+   */
+  isStandalonePWA() {
+    return (
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.matchMedia('(display-mode: fullscreen)').matches ||
+      window.matchMedia('(display-mode: minimal-ui)').matches ||
+      window.navigator.standalone === true ||
+      document.referrer.includes('android-app://')
+    );
+  },
+
+  /**
+   * Mendeteksi jenis perangkat/platform pengguna (ios, android, atau desktop)
+   */
+  detectPWAPlatform() {
+    const ua = window.navigator.userAgent || '';
+    const isIOS = /iPad|iPhone|iPod/.test(ua) || (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1);
+    if (isIOS) return 'ios';
+    if (/Android/i.test(ua)) return 'android';
+    return 'desktop';
+  },
+
+  /**
+   * Memperbarui visibilitas dan label tombol instalasi PWA sesuai status & platform
+   */
+  updatePWAInstallUI() {
+    const installed = this.isStandalonePWA();
+    if (installed) {
+      document.body.classList.add('pwa-installed');
+      return;
+    }
+
+    document.body.classList.remove('pwa-installed');
+    const platform = this.detectPWAPlatform();
+    const deskLabel = document.getElementById('btn-pwa-install-label');
+    const drawerLabel = document.getElementById('drawer-btn-install-label');
+
+    if (platform === 'ios') {
+      if (deskLabel) deskLabel.innerText = 'Pasang di iPad/iPhone';
+      if (drawerLabel) drawerLabel.innerText = 'Pasang di iPhone/iPad';
+    } else if (platform === 'android') {
+      if (deskLabel) deskLabel.innerText = 'Pasang di Tablet/HP';
+      if (drawerLabel) drawerLabel.innerText = 'Pasang Aplikasi di HP';
+    } else {
+      if (deskLabel) deskLabel.innerText = 'Pasang Aplikasi POS';
+      if (drawerLabel) drawerLabel.innerText = 'Pasang Aplikasi POS';
+    }
+  },
+
+  /**
+   * Mendaftarkan Service Worker dan menangkap prompt install PWA lintas platform
    */
   setupPWA() {
+    this.updatePWAInstallUI();
+
+    // Pantau perubahan mode tampilan secara real-time (misal setelah user klik install di address bar)
+    try {
+      const mq = window.matchMedia('(display-mode: standalone)');
+      if (mq.addEventListener) {
+        mq.addEventListener('change', () => this.updatePWAInstallUI());
+      }
+    } catch (e) {
+      // Abaikan pada browser lama
+    }
+
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js')
-        .then((reg) => console.log('Service Worker terdaftar:', reg.scope))
+      navigator.serviceWorker.register('./sw.js', { scope: './' })
+        .then((reg) => {
+          console.log('Service Worker terdaftar:', reg.scope);
+          if (reg.waiting) {
+            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
+          reg.addEventListener('updatefound', () => {
+            const newWorker = reg.installing;
+            if (newWorker) {
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  newWorker.postMessage({ type: 'SKIP_WAITING' });
+                }
+              });
+            }
+          });
+        })
         .catch((err) => console.warn('Gagal daftar Service Worker:', err));
     }
 
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       this.deferredInstallPrompt = e;
-      const installBtn = document.getElementById('btn-pwa-install');
-      if (installBtn) installBtn.style.display = 'inline-flex';
-      const drawerInstallBtn = document.getElementById('drawer-btn-install');
-      if (drawerInstallBtn) drawerInstallBtn.style.display = 'flex';
+      this.updatePWAInstallUI();
     });
 
     window.addEventListener('appinstalled', () => {
       this.deferredInstallPrompt = null;
-      const installBtn = document.getElementById('btn-pwa-install');
-      if (installBtn) installBtn.style.display = 'none';
-      const drawerInstallBtn = document.getElementById('drawer-btn-install');
-      if (drawerInstallBtn) drawerInstallBtn.style.display = 'none';
-      Notifications.toast('Aplikasi berhasil dipasang di layar Anda!', 'success', 3000);
+      document.body.classList.add('pwa-installed');
+      Notifications.toast('Aplikasi POS Teras Foodies berhasil dipasang di perangkat Anda!', 'success', 3500);
     });
   },
 
@@ -1061,21 +1133,116 @@ const App = {
   },
 
   /**
-   * Trigger PWA Install Prompt
+   * Trigger PWA Install Prompt (Mendukung Desktop, Android WebAPK, dan Panduan iOS/iPadOS)
    */
   async triggerPWAInstall() {
-    if (!this.deferredInstallPrompt) {
-      Notifications.toast('Aplikasi sudah terpasang atau browser Anda tidak mendukung prompt otomatis.', 'info');
+    if (this.isStandalonePWA()) {
+      Notifications.toast('Aplikasi sudah terpasang dan berjalan dalam mode penuh!', 'success', 2500);
       return;
     }
 
-    this.deferredInstallPrompt.prompt();
-    const { outcome } = await this.deferredInstallPrompt.userChoice;
-    console.log(`User response to install prompt: ${outcome}`);
-    this.deferredInstallPrompt = null;
+    // 1. Jika browser menyediakan native prompt (Chrome / Edge di Android & Desktop)
+    if (this.deferredInstallPrompt) {
+      try {
+        this.deferredInstallPrompt.prompt();
+        const { outcome } = await this.deferredInstallPrompt.userChoice;
+        console.log(`User response to install prompt: ${outcome}`);
+        this.deferredInstallPrompt = null;
 
-    const installBtn = document.getElementById('btn-pwa-install');
-    if (installBtn) installBtn.style.display = 'none';
+        if (outcome === 'accepted') {
+          document.body.classList.add('pwa-installed');
+        }
+        return;
+      } catch (err) {
+        console.warn('Gagal memanggil prompt instalasi otomatis:', err);
+      }
+    }
+
+    // 2. Fallback panduan interaktif sesuai platform (iOS Safari, Android, atau Desktop)
+    const platform = this.detectPWAPlatform();
+    if (typeof Swal === 'undefined') {
+      alert('Untuk memasang aplikasi: buka menu browser Anda lalu pilih "Tambahkan ke Layar Utama" atau "Instal Aplikasi".');
+      return;
+    }
+
+    if (platform === 'ios') {
+      Swal.fire({
+        title: 'Pasang di iPhone / iPad',
+        html: `
+          <div style="text-align:left; font-size:13.5px; line-height:1.6; color:var(--text-primary);">
+            <p style="margin-bottom:12px; color:var(--text-secondary);">
+              Pasang <strong>POS Teras Foodies</strong> di layar utama agar tampil layar penuh seperti aplikasi native:
+            </p>
+            <div style="background:var(--bg-surface-elevated); border:1px solid var(--border-color); border-radius:12px; padding:12px 14px; display:flex; flex-direction:column; gap:10px;">
+              <div style="display:flex; align-items:flex-start; gap:10px;">
+                <span style="background:var(--color-primary); color:#fff; width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0;">1</span>
+                <span>Ketuk ikon <strong>Bagikan (Share)</strong> <i class="ph ph-export" style="font-size:16px; color:var(--color-primary);"></i> di bilah bawah/atas browser <strong>Safari</strong>.</span>
+              </div>
+              <div style="display:flex; align-items:flex-start; gap:10px;">
+                <span style="background:var(--color-primary); color:#fff; width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0;">2</span>
+                <span>Gulir menu ke bawah lalu pilih <strong>"Tambah ke Layar Utama"</strong> (<em>Add to Home Screen</em> <i class="ph ph-plus-square"></i>).</span>
+              </div>
+              <div style="display:flex; align-items:flex-start; gap:10px;">
+                <span style="background:var(--color-primary); color:#fff; width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0;">3</span>
+                <span>Ketuk <strong>"Tambah"</strong> di pojok kanan atas layar.</span>
+              </div>
+            </div>
+          </div>
+        `,
+        confirmButtonText: 'Mengerti',
+        confirmButtonColor: '#E03E1A'
+      });
+    } else if (platform === 'android') {
+      Swal.fire({
+        title: 'Pasang Aplikasi di Android',
+        html: `
+          <div style="text-align:left; font-size:13.5px; line-height:1.6; color:var(--text-primary);">
+            <p style="margin-bottom:12px; color:var(--text-secondary);">
+              Untuk memasang <strong>POS Teras Foodies</strong> di HP/Tablet Android Anda:
+            </p>
+            <div style="background:var(--bg-surface-elevated); border:1px solid var(--border-color); border-radius:12px; padding:12px 14px; display:flex; flex-direction:column; gap:10px;">
+              <div style="display:flex; align-items:flex-start; gap:10px;">
+                <span style="background:var(--color-primary); color:#fff; width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0;">1</span>
+                <span>Ketuk ikon menu <strong>Titik Tiga (⋮)</strong> di pojok kanan atas browser Chrome.</span>
+              </div>
+              <div style="display:flex; align-items:flex-start; gap:10px;">
+                <span style="background:var(--color-primary); color:#fff; width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0;">2</span>
+                <span>Pilih <strong>"Instal aplikasi"</strong> atau <strong>"Tambahkan ke layar utama"</strong>.</span>
+              </div>
+              <div style="display:flex; align-items:flex-start; gap:10px;">
+                <span style="background:var(--color-primary); color:#fff; width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0;">3</span>
+                <span>Konfirmasi dengan mengetuk <strong>"Instal"</strong>.</span>
+              </div>
+            </div>
+          </div>
+        `,
+        confirmButtonText: 'Mengerti',
+        confirmButtonColor: '#E03E1A'
+      });
+    } else {
+      Swal.fire({
+        title: 'Pasang Aplikasi di Desktop / Laptop',
+        html: `
+          <div style="text-align:left; font-size:13.5px; line-height:1.6; color:var(--text-primary);">
+            <p style="margin-bottom:12px; color:var(--text-secondary);">
+              Untuk memasang <strong>POS Teras Foodies</strong> sebagai aplikasi mandiri di komputer/laptop:
+            </p>
+            <div style="background:var(--bg-surface-elevated); border:1px solid var(--border-color); border-radius:12px; padding:12px 14px; display:flex; flex-direction:column; gap:10px;">
+              <div style="display:flex; align-items:flex-start; gap:10px;">
+                <span style="background:var(--color-primary); color:#fff; width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0;">1</span>
+                <span>Klik ikon <strong>Instal <i class="ph ph-download-simple"></i></strong> di sisi kanan kolom alamat (Address Bar) Chrome / Edge.</span>
+              </div>
+              <div style="display:flex; align-items:flex-start; gap:10px;">
+                <span style="background:var(--color-primary); color:#fff; width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0;">2</span>
+                <span>Atau buka menu browser <strong>(⋮)</strong> &rarr; <strong>Simpan dan Bagikan / Aplikasi</strong> &rarr; <strong>Instal POS Teras Foodies</strong>.</span>
+              </div>
+            </div>
+          </div>
+        `,
+        confirmButtonText: 'Mengerti',
+        confirmButtonColor: '#E03E1A'
+      });
+    }
   },
 
   /**

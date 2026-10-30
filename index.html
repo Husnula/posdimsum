@@ -2,12 +2,18 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#E03E1A">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Teras Foodies">
+  <meta name="application-name" content="POS Teras Foodies">
   <meta name="description" content="Aplikasi POS Kasir & Manajemen Penjualan Dimsum Teras Foodies dengan PWA dan Database Google Sheets">
   <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
   <link rel="icon" type="image/svg+xml" href="assets/icon-192.svg">
-  <link rel="apple-touch-icon" href="assets/icon-192.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
   <title>POS Teras Foodies - Kasir & Rekap Penjualan Dimsum</title>
 
   <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
@@ -47,9 +53,14 @@
     </div>
 
     <div class="header-right">
-      <!-- Tombol Pasang PWA di Tablet (Desktop / Layar Lebar) -->
-      <button class="header-btn header-btn-install header-desktop-btn" id="btn-pwa-install" onclick="App.triggerPWAInstall()">
-        <i class="ph ph-download-simple"></i> Pasang di Tablet
+      <!-- Tombol Pasang PWA di Desktop & Tablet -->
+      <button class="header-btn header-btn-install header-desktop-btn" id="btn-pwa-install" onclick="App.triggerPWAInstall()" title="Pasang Aplikasi POS di Perangkat">
+        <i class="ph ph-download-simple"></i> <span id="btn-pwa-install-label">Pasang Aplikasi</span>
+      </button>
+
+      <!-- Tombol Pasang PWA Ringkas di Layar HP (Android & iOS) -->
+      <button class="header-btn header-btn-install header-btn-icon header-mobile-install-btn" id="btn-pwa-install-mobile" onclick="App.triggerPWAInstall()" title="Pasang Aplikasi di HP" aria-label="Pasang Aplikasi">
+        <i class="ph ph-download-simple"></i>
       </button>
 
       <!-- Tombol Rekap Penjualan (Kebutuhan Utama Klien - Terkunci alfian1991) -->
@@ -136,9 +147,9 @@
         <i class="ph ph-moon"></i>
         <span>Ganti Tema (Gelap/Terang)</span>
       </button>
-      <button class="mobile-drawer-item" id="drawer-btn-install" onclick="App.toggleMobileMenu(false); App.triggerPWAInstall();" style="display:none;">
+      <button class="mobile-drawer-item" id="drawer-btn-install" onclick="App.toggleMobileMenu(false); App.triggerPWAInstall();">
         <i class="ph ph-download-simple" style="color:var(--color-primary)"></i>
-        <span>Pasang Aplikasi di HP</span>
+        <span id="drawer-btn-install-label">Pasang Aplikasi di HP</span>
       </button>
       <div class="mobile-drawer-divider"></div>
       <button class="mobile-drawer-item" onclick="App.toggleMobileMenu(false); App.triggerLockedFeature('Manajemen Shift Kasir', 'Catat modal kas awal saat buka gerai dan hitung otomatis selisih kas fisik di laci kasir saat tutup shift.');">
