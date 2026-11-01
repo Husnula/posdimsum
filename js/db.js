@@ -4,7 +4,7 @@
  */
 
 const DB_NAME = 'TerasFoodiesPOS_DB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const DB = {
   dbInstance: null,
@@ -70,6 +70,36 @@ const DB = {
     return new Promise((resolve, reject) => {
       const tx = this.dbInstance.transaction('offline_transactions', 'readonly');
       const store = tx.objectStore('offline_transactions');
+      const req = store.getAll();
+
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  },
+
+  /**
+   * Menyimpan transaksi ke cache pesanan terbaru
+   */
+  async saveRecentOrder(transaction) {
+    if (!this.dbInstance) await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.dbInstance.transaction('recent_orders', 'readwrite');
+      const store = tx.objectStore('recent_orders');
+      const req = store.put(transaction);
+
+      req.onsuccess = () => resolve(true);
+      req.onerror = () => reject(req.error);
+    });
+  },
+
+  /**
+   * Mengambil riwayat pesanan lokal
+   */
+  async getRecentOrders() {
+    if (!this.dbInstance) await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.dbInstance.transaction('recent_orders', 'readonly');
+      const store = tx.objectStore('recent_orders');
       const req = store.getAll();
 
       req.onsuccess = () => resolve(req.result || []);

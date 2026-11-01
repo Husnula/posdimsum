@@ -122,6 +122,7 @@ function setupDatabase() {
     'Status_Sync', 'Catatan'
   ];
   setupSheetHeader(sheetTransaksi, headersTransaksi, '#1E293B');
+  sheetTransaksi.getRange('B:C').setNumberFormat('@');
 
   // 3. SETUP SHEET DETAIL TRANSAKSI
   let sheetDetail = ss.getSheetByName(SHEET_NAMES.DETAIL);
@@ -244,6 +245,10 @@ function doGet(e) {
         filter = 'all';
       }
       return handleGetReports(filter);
+    }
+
+    if (action === 'repairDates') {
+      return createJsonResponse(repairTransactionDates());
     }
 
     return createJsonResponse({
@@ -689,8 +694,10 @@ function handleSaveTransaction(trx) {
   }
 
   const now = new Date();
-  const tgl = trx.tanggal || formatDateIndo(now);
-  const jam = trx.jam || formatTimeIndo(now);
+  const rawTgl = trx.tanggal || formatDateIndo(now);
+  const tgl = "'" + String(rawTgl).replace(/^'+/, '');
+  const rawJam = trx.jam || formatTimeIndo(now);
+  const jam = "'" + String(rawJam).replace(/^'+/, '');
 
   // 1. Simpan baris header transaksi
   const rowTrx = [
@@ -846,8 +853,11 @@ function handleGetReports(dateFilter) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const isAll = (!dateFilter || dateFilter === 'all');
   const todayStr = getTodayFormatted();
-  let labelPeriode = isAll ? 'Semua Penjualan (All-Time)' : dateFilter;
-  if (dateFilter === todayStr) {
+  const cleanFilter = String(dateFilter || '').replace(/^'+/, '').trim();
+  const swappedFilter = swapDayMonthStr(cleanFilter);
+  const isTodayQuery = (!isAll && (cleanFilter === todayStr || swappedFilter === todayStr));
+  let labelPeriode = isAll ? 'Semua Penjualan (All-Time)' : cleanFilter;
+  if (isTodayQuery) {
     labelPeriode = `Hari Ini (${todayStr})`;
   }
 
@@ -874,15 +884,38 @@ function handleGetReports(dateFilter) {
 
   for (let i = 0; i < rawTrx.length; i++) {
     const row = rawTrx[i];
+    const trxId = String(row[0] || '').trim();
+    let idDate = '';
+    const idMatch = trxId.match(/(?:TRF|TRX|INV)-?(\d{4})(\d{2})(\d{2})/i);
+    if (idMatch) {
+      idDate = `${idMatch[3]}/${idMatch[2]}/${idMatch[1]}`;
+    }
     let tgl = row[1];
     if (tgl instanceof Date) {
       tgl = formatDateIndo(tgl);
     } else {
-      tgl = String(tgl || '').trim();
+      tgl = String(tgl || '').replace(/^'+/, '').trim();
+    }
+
+    const actualDate = idDate || tgl;
+    const swappedTgl = swapDayMonthStr(tgl);
+
+    let jamClean = '';
+    if (row[2] instanceof Date) {
+      jamClean = formatTimeIndo(row[2]);
+    } else {
+      const rawJamStr = String(row[2] || '').replace(/^'+/, '').trim();
+      const timeMatch = rawJamStr.match(/(\d{2}:\d{2}(?::\d{2})?)/);
+      jamClean = timeMatch ? timeMatch[1] : rawJamStr;
     }
 
     // Cocokkan tanggal
-    if (isAll || tgl === dateFilter) {
+    const isMatched = isAll ||
+      (idDate && (idDate === cleanFilter || idDate === swappedFilter)) ||
+      (tgl && (tgl === cleanFilter || tgl === swappedFilter)) ||
+      (swappedTgl && (swappedTgl === cleanFilter || swappedTgl === swappedFilter));
+
+    if (isMatched) {
       const totalAkhir = Number(row[9]) || 0;
       const metode = String(row[5]).trim().toLowerCase();
 
@@ -899,8 +932,8 @@ function handleGetReports(dateFilter) {
 
       listTrx.push({
         id: String(row[0]),
-        tanggal: tgl,
-        jam: String(row[2]),
+        tanggal: actualDate,
+        jam: jamClean,
         kasir: String(row[3]),
         tipe: String(row[4]),
         metode: String(row[5]),
@@ -1015,6 +1048,63 @@ function getEmptyReport(date) {
     itemsTerjual: [],
     transaksiTerbaru: []
   };
+}
+
+/**
+ * Helper membalik format tanggal DD/MM/YYYY <-> MM/DD/YYYY
+ * Mengatasi inkonsistensi locale US vs Indo di spreadsheet Google Sheets
+ */
+function swapDayMonthStr(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return '';
+  const parts = dateStr.trim().replace(/^'+/, '').split('/');
+  if (parts.length !== 3) return dateStr;
+  const d = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const y = parts[2];
+  if (d >= 1 && d <= 12 && m >= 1 && m <= 12) {
+    const pad = function(n) { return n < 10 ? '0' + n : '' + n; };
+    return pad(m) + '/' + pad(d) + '/' + y;
+  }
+  return dateStr;
+}
+
+/**
+ * FUNGSI PERBAIKAN: Menormalkan format tanggal di Sheet Transaksi
+ * Mengonversi tanggal ke format teks murni 'DD/MM/YYYY agar tidak lagi terbalik locale
+ */
+function repairTransactionDates() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetTrx = ss.getSheetByName(SHEET_NAMES.TRANSAKSI);
+  if (!sheetTrx) return { status: 'error', message: 'Sheet Transaksi tidak ditemukan' };
+  
+  const lastRow = sheetTrx.getLastRow();
+  if (lastRow <= 1) return { status: 'success', message: 'Tidak ada baris transaksi', updated: 0 };
+  
+  sheetTrx.getRange(2, 2, lastRow - 1, 2).setNumberFormat('@');
+  const values = sheetTrx.getRange(2, 1, lastRow - 1, 3).getValues();
+  let updatedCount = 0;
+  
+  for (let i = 0; i < values.length; i++) {
+    const trxId = String(values[i][0] || '').trim();
+    const idMatch = trxId.match(/(?:TRF|TRX|INV)-?(\d{4})(\d{2})(\d{2})/i);
+    if (idMatch) {
+      const correctDate = "'" + idMatch[3] + '/' + idMatch[2] + '/' + idMatch[1];
+      const rowIdx = i + 2;
+      sheetTrx.getRange(rowIdx, 2).setValue(correctDate);
+      
+      let rawJam = values[i][2];
+      if (rawJam instanceof Date) {
+        sheetTrx.getRange(rowIdx, 3).setValue("'" + formatTimeIndo(rawJam));
+      } else if (rawJam && typeof rawJam === 'string' && rawJam.includes('GMT')) {
+        const timeMatch = rawJam.match(/(\d{2}:\d{2}(?::\d{2})?)/);
+        if (timeMatch) {
+          sheetTrx.getRange(rowIdx, 3).setValue("'" + timeMatch[1]);
+        }
+      }
+      updatedCount++;
+    }
+  }
+  return { status: 'success', message: 'Berhasil menormalkan tanggal ' + updatedCount + ' transaksi.', updated: updatedCount };
 }
 
 /**

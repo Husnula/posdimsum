@@ -549,6 +549,15 @@ const App = {
 
     this.currentTransaction = transaction;
 
+    // Simpan ke IndexedDB cache pesanan lokal untuk proteksi offline recap
+    try {
+      if (typeof DB !== 'undefined' && DB.saveRecentOrder) {
+        await DB.saveRecentOrder(transaction);
+      }
+    } catch (e) {
+      console.warn('Gagal simpan recent order:', e);
+    }
+
     // Tutup modal checkout
     this.closeCheckoutModal();
 
@@ -637,6 +646,23 @@ const App = {
     const parts = indo.split('/');
     if (parts.length !== 3) return indo;
     return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  },
+
+  /**
+   * Helper membalik format tanggal DD/MM/YYYY <-> MM/DD/YYYY
+   * Memitigasi inkonsistensi spreadsheet Google Sheets ber-locale US
+   */
+  swapDayMonth(dateStr) {
+    if (!dateStr || typeof dateStr !== 'string') return dateStr;
+    const parts = dateStr.trim().split('/');
+    if (parts.length !== 3) return dateStr;
+    const d = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    const y = parts[2];
+    if (d >= 1 && d <= 12 && m >= 1 && m <= 12) {
+      return `${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}/${y}`;
+    }
+    return dateStr;
   },
 
   /**
@@ -868,27 +894,39 @@ const App = {
 
   async buildLocalReportFallback(filterParam) {
     let offlineList = [];
+    let recentList = [];
     try {
-      if (typeof DB !== 'undefined' && DB.getOfflineTransactions) {
-        offlineList = await DB.getOfflineTransactions();
+      if (typeof DB !== 'undefined') {
+        if (DB.getOfflineTransactions) offlineList = await DB.getOfflineTransactions();
+        if (DB.getRecentOrders) recentList = await DB.getRecentOrders();
       }
     } catch (e) {
-      console.warn('Gagal ambil transaksi offline:', e);
+      console.warn('Gagal ambil transaksi lokal:', e);
     }
 
-    const allLocal = [...offlineList];
-    if (this.currentTransaction && !allLocal.some(t => t.id === this.currentTransaction.id)) {
-      allLocal.push(this.currentTransaction);
+    const mergedMap = new Map();
+    recentList.forEach(t => { if (t && t.id) mergedMap.set(t.id, t); });
+    offlineList.forEach(t => { if (t && t.id) mergedMap.set(t.id, t); });
+    if (this.currentTransaction && this.currentTransaction.id) {
+      mergedMap.set(this.currentTransaction.id, this.currentTransaction);
     }
 
+    const allLocal = Array.from(mergedMap.values());
     const todayStr = this.getTodayIndoDate();
     const customStr = this.isoToIndoDate(this.currentReportCustomDate);
+    const targetDate = (filterParam === 'today') ? todayStr : (filterParam === 'custom' ? customStr : '');
+    const swappedTarget = this.swapDayMonth(targetDate);
 
     const filtered = allLocal.filter(t => {
-      const tgl = String(t.tanggal || '').trim();
       if (filterParam === 'all') return true;
-      if (filterParam === 'custom') return tgl === customStr;
-      return tgl === todayStr;
+      const tgl = String(t.tanggal || '').replace(/^'+/, '').trim();
+      let idDate = '';
+      const match = String(t.id || '').match(/(?:TRF|TRX|INV)-?(\d{4})(\d{2})(\d{2})/i);
+      if (match) {
+        idDate = `${match[3]}/${match[2]}/${match[1]}`;
+      }
+
+      return (tgl === targetDate || tgl === swappedTarget || (idDate && (idDate === targetDate || idDate === swappedTarget)));
     });
 
     let totalOmzet = 0;
@@ -967,6 +1005,25 @@ const App = {
         }
       } catch (e) {
         console.warn('Gagal ambil laporan online:', e);
+      }
+    }
+
+    // Auto-fallback resilien: Jika backend mengembalikan 0 transaksi karena bug perbedaan locale spreadsheet Google Sheets (DD/MM tertukar untuk tanggal 1-12)
+    if (navigator.onLine && (!reportData || reportData.totalTransaksi === 0) && (filterParam === 'today' || filterParam === 'custom')) {
+      const targetDate = (filterParam === 'today') ? this.getTodayIndoDate() : this.isoToIndoDate(this.currentReportCustomDate);
+      const swapped = this.swapDayMonth(targetDate);
+      if (swapped && swapped !== targetDate) {
+        try {
+          const fallbackRes = await fetch(`${apiUrl}?action=getReports&period=custom&date=${encodeURIComponent(swapped)}`);
+          const fallbackJson = await fallbackRes.json();
+          if (fallbackJson.status === 'success' && fallbackJson.data && fallbackJson.data.totalTransaksi > 0) {
+            reportData = fallbackJson.data;
+            // Kembalikan label periode agar tetap menampilkan tanggal yang dipilih kasir
+            reportData.tanggal = (filterParam === 'today') ? `Hari Ini (${targetDate})` : targetDate;
+          }
+        } catch (err) {
+          console.warn('Fallback swapped date query error:', err);
+        }
       }
     }
 
