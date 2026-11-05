@@ -50,6 +50,20 @@
         <span id="connection-status-text">Online</span>
       </div>
       <span class="pending-badge" id="pending-sync-badge">0 Pending</span>
+
+      <!-- Ringkasan Total Penjualan Hari Ini (Dashboard Kasir - Tanpa PIN) -->
+      <div class="header-today-sales header-desktop-btn" id="header-today-sales" onclick="App.onTodaySalesCardClick()" title="Total Penjualan Hari Ini (Kasir)">
+        <div class="sales-pill-icon">
+          <i class="ph ph-trend-up"></i>
+        </div>
+        <div class="sales-pill-content">
+          <div class="sales-pill-label">Hari Ini (<span id="today-sales-count">0</span> trx)</div>
+          <div class="sales-pill-amount" id="today-sales-amount">Rp0</div>
+        </div>
+        <button type="button" class="sales-pill-eye" onclick="App.toggleSalesVisibility(event)" title="Sembunyikan / Tampilkan Nominal" aria-label="Toggle Nominal">
+          <i class="ph ph-eye" id="sales-eye-icon"></i>
+        </button>
+      </div>
     </div>
 
     <div class="header-right">
@@ -101,16 +115,32 @@
 
   <!-- SUB-HEADER KHUSUS HP (TAMPIL DI LAYAR HP < 768px, SELALU TERLIHAT & ANTI-TERPOTONG) -->
   <nav class="mobile-sub-header" id="mobile-sub-header" aria-label="Aksi Cepat Kasir">
-    <button class="mobile-nav-btn mobile-nav-btn-recap" onclick="App.openReportsModal()" title="Rekap Penjualan (Kunci alfian1991)">
-      <i class="ph ph-chart-line-up"></i>
-      <span>Rekap Penjualan</span>
-      <span class="lock-indicator" id="lock-badge-recap-mob">🔒</span>
-    </button>
-    <button class="mobile-nav-btn mobile-nav-btn-stock" onclick="App.openMenuStockModal()" title="Kelola Menu & Stok (Kunci alfian1991)">
-      <i class="ph ph-package"></i>
-      <span>Menu & Stok</span>
-      <span class="lock-indicator" id="lock-badge-stock-mob">🔒</span>
-    </button>
+    <div class="mobile-today-sales" id="mobile-today-sales" onclick="App.onTodaySalesCardClick()" title="Total Penjualan Hari Ini">
+      <div class="mobile-sales-pill-left">
+        <div class="mobile-sales-pill-icon">
+          <i class="ph ph-trend-up"></i>
+        </div>
+        <div class="mobile-sales-pill-content">
+          <div class="mobile-sales-pill-label">Penjualan Hari Ini <span id="mobile-today-sales-count">(0 Trx)</span></div>
+          <div class="mobile-sales-pill-amount" id="mobile-today-sales-amount">Rp0</div>
+        </div>
+      </div>
+      <button type="button" class="sales-pill-eye" onclick="App.toggleSalesVisibility(event)" title="Sembunyikan / Tampilkan Nominal" aria-label="Toggle Nominal">
+        <i class="ph ph-eye" id="mobile-sales-eye-icon"></i>
+      </button>
+    </div>
+    <div class="mobile-sub-header-actions">
+      <button class="mobile-nav-btn mobile-nav-btn-recap" onclick="App.openReportsModal()" title="Rekap Penjualan (Kunci alfian1991)">
+        <i class="ph ph-chart-line-up"></i>
+        <span>Rekap Penjualan</span>
+        <span class="lock-indicator" id="lock-badge-recap-mob">🔒</span>
+      </button>
+      <button class="mobile-nav-btn mobile-nav-btn-stock" onclick="App.openMenuStockModal()" title="Kelola Menu & Stok (Kunci alfian1991)">
+        <i class="ph ph-package"></i>
+        <span>Menu & Stok</span>
+        <span class="lock-indicator" id="lock-badge-stock-mob">🔒</span>
+      </button>
+    </div>
   </nav>
 
   <!-- DRAWER / MENU SAMPING HP UNTUK FITUR LAINNYA -->

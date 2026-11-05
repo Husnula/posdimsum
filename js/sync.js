@@ -16,6 +16,9 @@ const SyncEngine = {
       this.updateStatusBadge();
       Notifications.toast('Koneksi internet terhubung kembali.', 'success', 2000);
       this.syncPendingQueue();
+      if (typeof App !== 'undefined' && App.updateTodaySalesSummary) {
+        App.updateTodaySalesSummary();
+      }
     });
 
     window.addEventListener('offline', () => {
@@ -152,6 +155,9 @@ const SyncEngine = {
         }
         await this.updateQueueCountBadge();
         Notifications.toast(`Sukses! ${res.syncedCount} transaksi berhasil masuk ke Google Sheets.`, 'success', 3000);
+        if (typeof App !== 'undefined' && App.updateTodaySalesSummary) {
+          App.updateTodaySalesSummary();
+        }
       }
     } catch (e) {
       console.error('Gagal sinkronisasi antrean:', e);

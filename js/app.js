@@ -19,6 +19,8 @@ const App = {
   restockChanges: {},
   opnameDiffs: {},
   OWNER_PIN: 'alfian1991',
+  todaySalesData: { omzet: 0, trxCount: 0 },
+  isSalesVisible: localStorage.getItem('tf_sales_visible') !== 'false',
 
   /**
    * Inisialisasi awal aplikasi saat dokumen selesai dimuat
@@ -48,6 +50,9 @@ const App = {
     // Render status kasir & badge kunci akses
     this.renderHeaderInfo();
     this.updateLockBadges();
+
+    // Tampilkan total penjualan hari ini di dashboard
+    this.updateTodaySalesSummary();
   },
 
   /**
@@ -415,6 +420,110 @@ const App = {
   },
 
   /**
+   * Beralih antara menampilkan atau menyamarkan nominal total penjualan di dashboard
+   */
+  toggleSalesVisibility(event) {
+    if (event) {
+      if (event.preventDefault) event.preventDefault();
+      if (event.stopPropagation) event.stopPropagation();
+    }
+    this.isSalesVisible = !this.isSalesVisible;
+    localStorage.setItem('tf_sales_visible', this.isSalesVisible ? 'true' : 'false');
+    if (this.todaySalesData) {
+      this.renderTodaySalesUI(this.todaySalesData.omzet, this.todaySalesData.trxCount);
+    }
+  },
+
+  /**
+   * Handler interaktif saat widget ringkasan penjualan diklik
+   */
+  onTodaySalesCardClick() {
+    const isUnlocked = (sessionStorage.getItem('tf_owner_unlocked') === 'true');
+    if (isUnlocked) {
+      this.openReportsModal('today');
+    } else {
+      const omzetFormatted = `Rp${Number(this.todaySalesData?.omzet || 0).toLocaleString('id-ID')}`;
+      const trxCount = this.todaySalesData?.trxCount || 0;
+      Notifications.toast(
+        `Total penjualan hari ini: ${omzetFormatted} (${trxCount} transaksi). Untuk rincian menu & metode bayar, buka Rekap Penjualan (PIN Owner).`,
+        'info',
+        4000
+      );
+    }
+  },
+
+  /**
+   * Render angka total penjualan hari ini pada elemen UI Desktop & Mobile
+   */
+  renderTodaySalesUI(omzet = 0, trxCount = 0) {
+    this.todaySalesData = { omzet, trxCount };
+    const numOmzet = Number(omzet) || 0;
+    const numTrx = Number(trxCount) || 0;
+
+    const displayAmount = this.isSalesVisible
+      ? `Rp${numOmzet.toLocaleString('id-ID')}`
+      : 'Rp ••••••';
+
+    const eyeIconClass = this.isSalesVisible ? 'ph ph-eye' : 'ph ph-eye-slash';
+    const eyeTitle = this.isSalesVisible ? 'Sembunyikan Nominal' : 'Tampilkan Nominal';
+
+    // Desktop Header
+    const deskAmount = document.getElementById('today-sales-amount');
+    const deskCount = document.getElementById('today-sales-count');
+    const deskEye = document.getElementById('sales-eye-icon');
+    if (deskAmount) deskAmount.innerText = displayAmount;
+    if (deskCount) deskCount.innerText = numTrx;
+    if (deskEye) {
+      deskEye.className = eyeIconClass;
+      if (deskEye.parentElement) deskEye.parentElement.setAttribute('title', eyeTitle);
+    }
+
+    // Mobile Sub-Header
+    const mobAmount = document.getElementById('mobile-today-sales-amount');
+    const mobCount = document.getElementById('mobile-today-sales-count');
+    const mobEye = document.getElementById('mobile-sales-eye-icon');
+    if (mobAmount) mobAmount.innerText = displayAmount;
+    if (mobCount) mobCount.innerText = `(${numTrx} Trx)`;
+    if (mobEye) {
+      mobEye.className = eyeIconClass;
+      if (mobEye.parentElement) mobEye.parentElement.setAttribute('title', eyeTitle);
+    }
+  },
+
+  /**
+   * Memperbarui kalkulasi total penjualan hari ini di dashboard (kasir & owner tanpa PIN)
+   */
+  async updateTodaySalesSummary() {
+    try {
+      // 1. Ambil data lokal seketika (0ms, langsung tampil di UI)
+      const local = await this.buildLocalReportFallback('today');
+      let totalOmzet = Number(local?.totalOmzet) || 0;
+      let totalTrx = Number(local?.totalTransaksi) || 0;
+
+      this.renderTodaySalesUI(totalOmzet, totalTrx);
+
+      // 2. Jika online, coba sinkronkan dengan database Google Sheets
+      const apiUrl = getApiUrl();
+      if (navigator.onLine && !apiUrl.includes('AKfycbz_placeholder')) {
+        const queryStr = `?action=getReports&period=today&date=${encodeURIComponent(this.getTodayIndoDate())}`;
+        const res = await fetch(`${apiUrl}${queryStr}`);
+        const json = await res.json();
+        if (json.status === 'success' && json.data) {
+          const serverOmzet = Number(json.data.totalOmzet) || 0;
+          const serverTrx = Number(json.data.totalTransaksi) || 0;
+
+          // Gabungkan dengan transaksi offline lokal jika ada
+          const finalOmzet = Math.max(totalOmzet, serverOmzet);
+          const finalTrx = Math.max(totalTrx, serverTrx);
+          this.renderTodaySalesUI(finalOmzet, finalTrx);
+        }
+      }
+    } catch (e) {
+      console.warn('Gagal memuat rekap penjualan hari ini di dashboard:', e);
+    }
+  },
+
+  /**
    * Buka Modal Pembayaran (Checkout)
    */
   openCheckoutModal() {
@@ -572,6 +681,9 @@ const App = {
 
     // Kosongkan keranjang
     Cart.clear();
+
+    // Perbarui rekap total penjualan hari ini di dashboard seketika
+    this.updateTodaySalesSummary();
 
     // Tampilkan SweetAlert2 dialog sukses dengan opsi cetak struk / kirim WA
     if (typeof Swal !== 'undefined') {
