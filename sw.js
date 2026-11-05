@@ -1,9 +1,9 @@
 /**
- * Service Worker POS Teras Foodies (v5)
+ * Service Worker POS Teras Foodies (v6)
  * Mendukung instalasi PWA lintas platform (Desktop, Android, iOS/iPadOS) & akses offline penuh
  */
 
-const CACHE_NAME = 'teras-foodies-pos-v5';
+const CACHE_NAME = 'teras-foodies-pos-v6';
 
 // Aset inti lokal yang wajib tersedia saat offline
 const CORE_ASSETS = [
@@ -158,7 +158,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Aset Statis Lokal & CDN (CSS, JS, Font, Ikon): Stale-While-Revalidate
+  // 3. Aset Statis Lokal & CDN (CSS, JS, Font, Ikon):
+  // Jika URL memiliki parameter versi (?v=...), gunakan Network-First agar update CSS/JS langsung aktif seketika
+  if (requestUrl.searchParams.has('v')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const cloned = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request, { ignoreSearch: true }))
+    );
+    return;
+  }
+
+  // 4. Aset Statis Standar: Stale-While-Revalidate
   event.respondWith(
     caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
       const fetchPromise = fetch(event.request)

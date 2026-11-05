@@ -170,7 +170,7 @@ const Cart = {
     if (this.items.length === 0) {
       cartListEl.innerHTML = `
         <div class="cart-empty-state">
-          <div class="empty-icon">🛒</div>
+          <div class="empty-icon"><i class="ph ph-shopping-bag-open"></i></div>
           <p class="empty-title">Keranjang Masih Kosong</p>
           <span class="empty-desc">Ketuk menu di samping untuk menambahkan pesanan</span>
         </div>
@@ -186,7 +186,7 @@ const Cart = {
                 <span class="cart-item-variant">${escapeHtml(item.varian)}</span>
                 <span class="cart-item-price">@Rp${Number(item.harga).toLocaleString('id-ID')}</span>
               </div>
-              ${item.catatan ? `<div class="cart-item-note">📝 ${escapeHtml(item.catatan)}</div>` : ''}
+              ${item.catatan ? `<div class="cart-item-note"><i class="ph ph-note"></i> ${escapeHtml(item.catatan)}</div>` : ''}
             </div>
 
             <div class="cart-item-actions">

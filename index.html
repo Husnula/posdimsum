@@ -28,7 +28,7 @@
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
   <!-- Style CSS -->
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=20261105-03">
 </head>
 <body>
 
@@ -51,14 +51,14 @@
       </div>
       <span class="pending-badge" id="pending-sync-badge">0 Pending</span>
 
-      <!-- Ringkasan Total Penjualan Hari Ini (Dashboard Kasir - Tanpa PIN) -->
+      <!-- Ringkasan Total Penjualan Hari Ini (Dashboard Kasir - Anti Wrap & Ergonomis) -->
       <div class="header-today-sales header-desktop-btn" id="header-today-sales" onclick="App.onTodaySalesCardClick()" title="Total Penjualan Hari Ini (Kasir)">
         <div class="sales-pill-icon">
           <i class="ph ph-trend-up"></i>
         </div>
         <div class="sales-pill-content">
-          <div class="sales-pill-label">Hari Ini (<span id="today-sales-count">0</span> trx)</div>
-          <div class="sales-pill-amount" id="today-sales-amount">Rp0</div>
+          <span class="sales-pill-label">Hari Ini (<span id="today-sales-count">0</span> trx)</span>
+          <span class="sales-pill-amount" id="today-sales-amount">Rp0</span>
         </div>
         <button type="button" class="sales-pill-eye" onclick="App.toggleSalesVisibility(event)" title="Sembunyikan / Tampilkan Nominal" aria-label="Toggle Nominal">
           <i class="ph ph-eye" id="sales-eye-icon"></i>
@@ -68,8 +68,8 @@
 
     <div class="header-right">
       <!-- Tombol Pasang PWA di Desktop & Tablet -->
-      <button class="header-btn header-btn-install header-desktop-btn" id="btn-pwa-install" onclick="App.triggerPWAInstall()" title="Pasang Aplikasi POS di Perangkat">
-        <i class="ph ph-download-simple"></i> <span id="btn-pwa-install-label">Pasang Aplikasi</span>
+      <button class="header-btn header-btn-install header-desktop-btn" id="btn-pwa-install" onclick="App.triggerPWAInstall()" title="Pasang Aplikasi POS">
+        <i class="ph ph-download-simple"></i> <span id="btn-pwa-install-label">Pasang POS</span>
       </button>
 
       <!-- Tombol Pasang PWA Ringkas di Layar HP (Android & iOS) -->
@@ -78,31 +78,45 @@
       </button>
 
       <!-- Tombol Rekap Penjualan (Kebutuhan Utama Klien - Terkunci alfian1991) -->
-      <button class="header-btn header-desktop-btn" onclick="App.openReportsModal()" title="Lihat Rekap Penjualan (Kunci alfian1991)">
+      <button class="header-btn header-desktop-btn" onclick="App.openReportsModal()" title="Lihat Rekap Penjualan">
         <i class="ph ph-chart-line-up" style="color:var(--color-primary)"></i> Rekap Penjualan <span class="lock-indicator" id="lock-badge-recap-desk">🔒</span>
       </button>
 
       <!-- Tombol Kelola Menu & Stok (CRUD Menu, Restock Cepat & Opname - Terkunci alfian1991) -->
-      <button class="header-btn header-desktop-btn" onclick="App.openMenuStockModal()" title="Kelola Menu & Manajemen Stok (Kunci alfian1991)">
+      <button class="header-btn header-desktop-btn" onclick="App.openMenuStockModal()" title="Kelola Menu & Stok">
         <i class="ph ph-package" style="color:var(--color-primary)"></i> Menu & Stok <span class="lock-indicator" id="lock-badge-stock-desk">🔒</span>
       </button>
 
-      <!-- Fitur Pro Terkunci (Bahan Upsell / Upgrade Biaya) -->
-      <button class="header-btn header-desktop-btn" onclick="App.triggerLockedFeature('Manajemen Shift Kasir', 'Catat modal kas awal saat buka gerai dan hitung otomatis selisih kas fisik di laci kasir saat tutup shift.')" title="Fitur Pro: Shift Kasir">
-        <i class="ph ph-clock-user"></i> Shift 🔒
-      </button>
+      <!-- Fitur Pro (Dropdown Ringkas Rapi Anti Penuh Navbar) -->
+      <div class="header-dropdown-wrap header-desktop-btn">
+        <button class="header-btn header-btn-pro" onclick="App.toggleProMenu(event)" title="Fitur Tambahan (Shift, Biaya & Laba)">
+          <i class="ph ph-sparkle" style="color:#D97706"></i> Fitur Pro 🔒 <i class="ph ph-caret-down" style="font-size:11px; opacity:0.7;"></i>
+        </button>
+        <div class="header-dropdown-menu" id="header-pro-dropdown">
+          <button type="button" class="header-dropdown-item" onclick="App.triggerLockedFeature('Manajemen Shift Kasir', 'Catat modal kas awal saat buka gerai dan hitung otomatis selisih kas fisik di laci kasir saat tutup shift.')">
+            <i class="ph ph-clock-user"></i>
+            <div>
+              <div style="font-weight:700; font-size:12.5px;">Shift Kasir 🔒</div>
+              <div style="font-size:11px; color:var(--text-muted);">Hitung kas modal & setoran fisik</div>
+            </div>
+          </button>
+          <button type="button" class="header-dropdown-item" onclick="App.triggerLockedFeature('Pencatatan Pengeluaran & Laba', 'Catat pembelian bahan baku, gas, kemasan, dan es batu untuk memantau laba bersih harian otomatis.')">
+            <i class="ph ph-wallet"></i>
+            <div>
+              <div style="font-weight:700; font-size:12.5px;">Biaya & Pengeluaran 🔒</div>
+              <div style="font-size:11px; color:var(--text-muted);">Catat belanja & kalkulasi laba harian</div>
+            </div>
+          </button>
+        </div>
+      </div>
 
-      <button class="header-btn header-desktop-btn" onclick="App.triggerLockedFeature('Pencatatan Pengeluaran & Laba', 'Catat pembelian bahan baku, gas, kemasan, dan es batu untuk memantau laba bersih harian otomatis.')" title="Fitur Pro: Catat Pengeluaran">
-        <i class="ph ph-wallet"></i> Biaya 🔒
-      </button>
-
-      <!-- Tombol Pengaturan Koneksi Database -->
-      <button class="header-btn header-btn-icon" onclick="App.openSettingsModal()" title="Pengaturan & Database" aria-label="Pengaturan">
+      <!-- Tombol Pengaturan Koneksi Database (Desktop Only - HP ada di Menu Drawer) -->
+      <button class="header-btn header-btn-icon header-desktop-btn" onclick="App.openSettingsModal()" title="Pengaturan & Database" aria-label="Pengaturan">
         <i class="ph ph-gear"></i>
       </button>
 
-      <!-- Tombol Mode Gelap/Terang -->
-      <button class="header-btn header-btn-icon" id="btn-toggle-theme" title="Ganti Tema" aria-label="Ganti Tema">
+      <!-- Tombol Mode Gelap/Terang (Desktop Only - HP ada di Menu Drawer) -->
+      <button class="header-btn header-btn-icon header-desktop-btn" id="btn-toggle-theme" title="Ganti Tema" aria-label="Ganti Tema">
         <i class="ph ph-moon"></i>
       </button>
 
@@ -113,17 +127,15 @@
     </div>
   </header>
 
-  <!-- SUB-HEADER KHUSUS HP (TAMPIL DI LAYAR HP < 768px, SELALU TERLIHAT & ANTI-TERPOTONG) -->
+  <!-- SUB-HEADER KHUSUS HP (TAMPIL DI LAYAR HP < 768px, 1 BARIS ERGONOMIS & ANTI-SESAK) -->
   <nav class="mobile-sub-header" id="mobile-sub-header" aria-label="Aksi Cepat Kasir">
     <div class="mobile-today-sales" id="mobile-today-sales" onclick="App.onTodaySalesCardClick()" title="Total Penjualan Hari Ini">
-      <div class="mobile-sales-pill-left">
-        <div class="mobile-sales-pill-icon">
-          <i class="ph ph-trend-up"></i>
-        </div>
-        <div class="mobile-sales-pill-content">
-          <div class="mobile-sales-pill-label">Penjualan Hari Ini <span id="mobile-today-sales-count">(0 Trx)</span></div>
-          <div class="mobile-sales-pill-amount" id="mobile-today-sales-amount">Rp0</div>
-        </div>
+      <div class="mobile-sales-pill-icon">
+        <i class="ph ph-trend-up"></i>
+      </div>
+      <div class="mobile-sales-pill-content">
+        <span class="mobile-sales-pill-label">Hari Ini <span id="mobile-today-sales-count">(0 Trx)</span></span>
+        <span class="mobile-sales-pill-amount" id="mobile-today-sales-amount">Rp0</span>
       </div>
       <button type="button" class="sales-pill-eye" onclick="App.toggleSalesVisibility(event)" title="Sembunyikan / Tampilkan Nominal" aria-label="Toggle Nominal">
         <i class="ph ph-eye" id="mobile-sales-eye-icon"></i>
@@ -132,12 +144,12 @@
     <div class="mobile-sub-header-actions">
       <button class="mobile-nav-btn mobile-nav-btn-recap" onclick="App.openReportsModal()" title="Rekap Penjualan (Kunci alfian1991)">
         <i class="ph ph-chart-line-up"></i>
-        <span>Rekap Penjualan</span>
+        <span>Rekap</span>
         <span class="lock-indicator" id="lock-badge-recap-mob">🔒</span>
       </button>
       <button class="mobile-nav-btn mobile-nav-btn-stock" onclick="App.openMenuStockModal()" title="Kelola Menu & Stok (Kunci alfian1991)">
         <i class="ph ph-package"></i>
-        <span>Menu & Stok</span>
+        <span>Stok</span>
         <span class="lock-indicator" id="lock-badge-stock-mob">🔒</span>
       </button>
     </div>
@@ -715,12 +727,12 @@
   <div id="thermal-receipt-print-area"></div>
 
   <!-- SCRIPTS APLIKASI -->
-  <script src="config.js"></script>
-  <script src="js/notifications.js"></script>
-  <script src="js/db.js"></script>
-  <script src="js/cart.js"></script>
-  <script src="js/receipt.js"></script>
-  <script src="js/sync.js"></script>
-  <script src="js/app.js"></script>
+  <script src="config.js?v=20261105-03"></script>
+  <script src="js/notifications.js?v=20261105-03"></script>
+  <script src="js/db.js?v=20261105-03"></script>
+  <script src="js/cart.js?v=20261105-03"></script>
+  <script src="js/receipt.js?v=20261105-03"></script>
+  <script src="js/sync.js?v=20261105-03"></script>
+  <script src="js/app.js?v=20261105-03"></script>
 </body>
 </html>

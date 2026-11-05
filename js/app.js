@@ -157,23 +157,26 @@ const App = {
   },
 
   /**
-   * Memuat data menu dari Google Sheets API (dengan fallback cache lokal)
+   * Memuat data menu dari Google Sheets API (dengan fallback cache lokal instan 0ms)
    */
   async loadMenu() {
-    const gridEl = document.getElementById('menu-grid-container');
-    if (gridEl) {
-      gridEl.innerHTML = `
-        <div class="menu-loading-state">
-          <div class="tf-spinner"></div>
-          <p>Memuat menu riil dari Google Sheets...</p>
-        </div>
-      `;
+    // 1. Muat instan dari IndexedDB atau fallback master data agar kasir langsung melihat menu
+    try {
+      const cached = await DB.getMenuCache();
+      if (cached && cached.length > 0) {
+        this.menuItems = cached;
+        this.renderMenu();
+      } else {
+        this.menuItems = this.getFallbackRealMenu();
+        this.renderMenu();
+      }
+    } catch (e) {
+      this.menuItems = this.getFallbackRealMenu();
+      this.renderMenu();
     }
 
+    // 2. Di latar belakang jika online, perbarui dari Google Apps Script
     const apiUrl = getApiUrl();
-    let loadedFromApi = false;
-
-    // Coba ambil dari Google Apps Script jika URL sudah diset
     if (navigator.onLine && !apiUrl.includes('AKfycbz_placeholder')) {
       try {
         const fetchUrl = `${apiUrl}?action=getMenu`;
@@ -183,32 +186,13 @@ const App = {
         if (json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
           this.menuItems = json.data;
           await DB.saveMenuCache(this.menuItems);
-          loadedFromApi = true;
-          console.log(`Berhasil memuat ${this.menuItems.length} menu langsung dari Google Sheets!`);
+          this.renderMenu();
+          console.log(`Menu berhasil diperbarui dari Google Sheets (${this.menuItems.length} menu).`);
         }
       } catch (err) {
-        console.warn('Gagal memuat langsung dari Apps Script, mencoba cache lokal:', err);
+        console.warn('Gagal memuat pembaruan menu dari Apps Script, menggunakan data lokal:', err);
       }
     }
-
-    // Jika gagal atau offline, ambil dari cache IndexedDB
-    if (!loadedFromApi) {
-      try {
-        const cached = await DB.getMenuCache();
-        if (cached && cached.length > 0) {
-          this.menuItems = cached;
-          console.log(`Memuat ${this.menuItems.length} menu dari cache lokal.`);
-        } else {
-          // Inisialisasi awal dari master menu riil Teras Foodies
-          this.menuItems = this.getFallbackRealMenu();
-          await DB.saveMenuCache(this.menuItems);
-        }
-      } catch (e) {
-        this.menuItems = this.getFallbackRealMenu();
-      }
-    }
-
-    this.renderMenu();
   },
 
   /**
@@ -303,30 +287,26 @@ const App = {
 
       let stockBadgeHtml = '';
       if (isOutOfStock) {
-        stockBadgeHtml = `<span class="menu-stock-badge stock-out">HABIS</span>`;
+        stockBadgeHtml = `<span class="menu-stock-badge stock-out">Habis</span>`;
       } else if (isLowStock) {
-        stockBadgeHtml = `<span class="menu-stock-badge stock-low">⚠️ Sisa ${stockNum}</span>`;
+        stockBadgeHtml = `<span class="menu-stock-badge stock-low">Sisa ${stockNum}</span>`;
       } else if (!isUnlimited) {
-        stockBadgeHtml = `<span class="menu-stock-badge">Stok: ${stockNum}</span>`;
+        stockBadgeHtml = `<span class="menu-stock-badge">${stockNum} pcs</span>`;
       } else {
-        stockBadgeHtml = `<span class="menu-stock-badge" style="opacity:0.8;">Tersedia</span>`;
+        stockBadgeHtml = `<span class="menu-stock-badge" style="opacity:0.8;">Ready</span>`;
       }
 
-      // Pilih icon sesuai kategori
+      // Pilih badge sesuai kategori
       let categoryBadgeClass = 'badge-dimsum';
-      let iconName = 'ph-bowl-food';
+      let shortCat = item.kategori || 'Dimsum';
       if (item.kategori.includes('Minuman')) {
         categoryBadgeClass = 'badge-drink';
-        iconName = 'ph-brandy';
       } else if (item.kategori.includes('Mie')) {
         categoryBadgeClass = 'badge-noodle';
-        iconName = 'ph-bowl-food';
       } else if (item.kategori.includes('Birthday')) {
         categoryBadgeClass = 'badge-birthday';
-        iconName = 'ph-cake';
       } else if (item.kategori.includes('Wonton') || item.kategori.includes('Basreng')) {
         categoryBadgeClass = 'badge-snack';
-        iconName = 'ph-fire';
       }
 
       const cardClass = isOutOfStock ? 'menu-card out-of-stock' : 'menu-card';
@@ -336,29 +316,21 @@ const App = {
 
       html += `
         <div class="${cardClass}" onclick="${clickAction}" role="button" tabindex="0">
-          <div class="menu-card-header">
-            <span class="menu-category-badge ${categoryBadgeClass}">${escapeHtml(item.kategori)}</span>
-            <span class="menu-variant-badge">${escapeHtml(item.varian)}</span>
+          <div class="menu-card-top">
+            <span class="menu-category-badge ${categoryBadgeClass}">${escapeHtml(shortCat)}</span>
+            ${stockBadgeHtml}
           </div>
           
-          <div class="menu-card-body">
-            <div class="menu-card-icon">
-              <i class="ph ${iconName}"></i>
-            </div>
+          <div class="menu-card-middle">
             <h4 class="menu-card-title">${escapeHtml(item.nama)}</h4>
             ${item.keterangan ? `<p class="menu-card-desc">${escapeHtml(item.keterangan)}</p>` : ''}
           </div>
 
-          <div class="menu-card-footer">
+          <div class="menu-card-bottom">
             <div class="menu-card-price">Rp${Number(item.harga).toLocaleString('id-ID')}</div>
             <button class="btn-add-quick" aria-label="Tambah ${escapeHtml(item.nama)}" ${isOutOfStock ? 'disabled' : ''}>
               ${isOutOfStock ? '<i class="ph ph-prohibit"></i>' : '<i class="ph ph-plus"></i>'}
             </button>
-          </div>
-
-          <div class="menu-card-stock-row">
-            ${stockBadgeHtml}
-            <span style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">${escapeHtml(item.id)}</span>
           </div>
         </div>
       `;
@@ -432,6 +404,16 @@ const App = {
     if (this.todaySalesData) {
       this.renderTodaySalesUI(this.todaySalesData.omzet, this.todaySalesData.trxCount);
     }
+  },
+
+  /**
+   * Buka/tutup dropdown menu Fitur Pro di navbar desktop
+   */
+  toggleProMenu(event) {
+    if (event) event.stopPropagation();
+    const dropdown = document.getElementById('header-pro-dropdown');
+    if (!dropdown) return;
+    dropdown.classList.toggle('show');
   },
 
   /**
@@ -1475,6 +1457,14 @@ const App = {
       document.documentElement.setAttribute('data-theme', savedTheme);
       themeBtn.innerHTML = savedTheme === 'dark' ? '<i class="ph ph-sun"></i>' : '<i class="ph ph-moon"></i>';
     }
+
+    // Klik di luar dropdown Fitur Pro untuk menutupnya
+    document.addEventListener('click', (e) => {
+      const dropdown = document.getElementById('header-pro-dropdown');
+      if (dropdown && dropdown.classList.contains('show') && !e.target.closest('.header-dropdown-wrap')) {
+        dropdown.classList.remove('show');
+      }
+    });
   },
 
   /**
