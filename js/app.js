@@ -407,16 +407,6 @@ const App = {
   },
 
   /**
-   * Buka/tutup dropdown menu Fitur Pro di navbar desktop
-   */
-  toggleProMenu(event) {
-    if (event) event.stopPropagation();
-    const dropdown = document.getElementById('header-pro-dropdown');
-    if (!dropdown) return;
-    dropdown.classList.toggle('show');
-  },
-
-  /**
    * Handler interaktif saat widget ringkasan penjualan diklik
    */
   onTodaySalesCardClick() {
@@ -1457,14 +1447,6 @@ const App = {
       document.documentElement.setAttribute('data-theme', savedTheme);
       themeBtn.innerHTML = savedTheme === 'dark' ? '<i class="ph ph-sun"></i>' : '<i class="ph ph-moon"></i>';
     }
-
-    // Klik di luar dropdown Fitur Pro untuk menutupnya
-    document.addEventListener('click', (e) => {
-      const dropdown = document.getElementById('header-pro-dropdown');
-      if (dropdown && dropdown.classList.contains('show') && !e.target.closest('.header-dropdown-wrap')) {
-        dropdown.classList.remove('show');
-      }
-    });
   },
 
   /**

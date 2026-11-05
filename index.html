@@ -28,7 +28,7 @@
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
   <!-- Style CSS -->
-  <link rel="stylesheet" href="css/style.css?v=20261105-03">
+  <link rel="stylesheet" href="css/style.css?v=20261105-04">
 </head>
 <body>
 
@@ -86,29 +86,6 @@
       <button class="header-btn header-desktop-btn" onclick="App.openMenuStockModal()" title="Kelola Menu & Stok">
         <i class="ph ph-package" style="color:var(--color-primary)"></i> Menu & Stok <span class="lock-indicator" id="lock-badge-stock-desk">🔒</span>
       </button>
-
-      <!-- Fitur Pro (Dropdown Ringkas Rapi Anti Penuh Navbar) -->
-      <div class="header-dropdown-wrap header-desktop-btn">
-        <button class="header-btn header-btn-pro" onclick="App.toggleProMenu(event)" title="Fitur Tambahan (Shift, Biaya & Laba)">
-          <i class="ph ph-sparkle" style="color:#D97706"></i> Fitur Pro 🔒 <i class="ph ph-caret-down" style="font-size:11px; opacity:0.7;"></i>
-        </button>
-        <div class="header-dropdown-menu" id="header-pro-dropdown">
-          <button type="button" class="header-dropdown-item" onclick="App.triggerLockedFeature('Manajemen Shift Kasir', 'Catat modal kas awal saat buka gerai dan hitung otomatis selisih kas fisik di laci kasir saat tutup shift.')">
-            <i class="ph ph-clock-user"></i>
-            <div>
-              <div style="font-weight:700; font-size:12.5px;">Shift Kasir 🔒</div>
-              <div style="font-size:11px; color:var(--text-muted);">Hitung kas modal & setoran fisik</div>
-            </div>
-          </button>
-          <button type="button" class="header-dropdown-item" onclick="App.triggerLockedFeature('Pencatatan Pengeluaran & Laba', 'Catat pembelian bahan baku, gas, kemasan, dan es batu untuk memantau laba bersih harian otomatis.')">
-            <i class="ph ph-wallet"></i>
-            <div>
-              <div style="font-weight:700; font-size:12.5px;">Biaya & Pengeluaran 🔒</div>
-              <div style="font-size:11px; color:var(--text-muted);">Catat belanja & kalkulasi laba harian</div>
-            </div>
-          </button>
-        </div>
-      </div>
 
       <!-- Tombol Pengaturan Koneksi Database (Desktop Only - HP ada di Menu Drawer) -->
       <button class="header-btn header-btn-icon header-desktop-btn" onclick="App.openSettingsModal()" title="Pengaturan & Database" aria-label="Pengaturan">
@@ -192,15 +169,6 @@
       <button class="mobile-drawer-item" id="drawer-btn-install" onclick="App.toggleMobileMenu(false); App.triggerPWAInstall();">
         <i class="ph ph-download-simple" style="color:var(--color-primary)"></i>
         <span id="drawer-btn-install-label">Pasang Aplikasi di HP</span>
-      </button>
-      <div class="mobile-drawer-divider"></div>
-      <button class="mobile-drawer-item" onclick="App.toggleMobileMenu(false); App.triggerLockedFeature('Manajemen Shift Kasir', 'Catat modal kas awal saat buka gerai dan hitung otomatis selisih kas fisik di laci kasir saat tutup shift.');">
-        <i class="ph ph-clock-user"></i>
-        <span>Shift Kasir 🔒</span>
-      </button>
-      <button class="mobile-drawer-item" onclick="App.toggleMobileMenu(false); App.triggerLockedFeature('Pencatatan Pengeluaran & Laba', 'Catat pembelian bahan baku, gas, kemasan, dan es batu untuk memantau laba bersih harian otomatis.');">
-        <i class="ph ph-wallet"></i>
-        <span>Catat Pengeluaran 🔒</span>
       </button>
       <div class="mobile-drawer-divider"></div>
       <button class="mobile-drawer-item" id="drawer-btn-lock" onclick="App.toggleMobileMenu(false); App.toggleOwnerLock();" style="font-size:12px; color:var(--text-secondary);">
@@ -727,12 +695,12 @@
   <div id="thermal-receipt-print-area"></div>
 
   <!-- SCRIPTS APLIKASI -->
-  <script src="config.js?v=20261105-03"></script>
-  <script src="js/notifications.js?v=20261105-03"></script>
-  <script src="js/db.js?v=20261105-03"></script>
-  <script src="js/cart.js?v=20261105-03"></script>
-  <script src="js/receipt.js?v=20261105-03"></script>
-  <script src="js/sync.js?v=20261105-03"></script>
-  <script src="js/app.js?v=20261105-03"></script>
+  <script src="config.js?v=20261105-04"></script>
+  <script src="js/notifications.js?v=20261105-04"></script>
+  <script src="js/db.js?v=20261105-04"></script>
+  <script src="js/cart.js?v=20261105-04"></script>
+  <script src="js/receipt.js?v=20261105-04"></script>
+  <script src="js/sync.js?v=20261105-04"></script>
+  <script src="js/app.js?v=20261105-04"></script>
 </body>
 </html>
