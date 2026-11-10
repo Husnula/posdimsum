@@ -37,7 +37,7 @@ const APP_CONFIG = {
     EXPENSE_TRACKING: false,  // Catat pengeluaran operasional & kalkulasi laba bersih
     ONLINE_MARKUP: false,     // Auto-markup harga khusus GoFood/ShopeeFood/GrabFood
     MENU_EDITOR_WEB: true,    // Tambah/edit menu langsung dari layar web kasir (Aktif)
-    EXPORT_REPORTS: false     // Ekspor laporan penjualan bulanan ke Excel / PDF
+    EXPORT_REPORTS: true      // Ekspor rekapan penjualan komprehensif ke Excel (.xlsx) (Aktif)
   },
 
   STORAGE_KEYS: {

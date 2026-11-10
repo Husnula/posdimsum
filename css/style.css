@@ -1344,6 +1344,163 @@ body.pwa-installed #drawer-btn-install {
   display: flex;
   gap: 10px;
   margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.recap-footer-actions button {
+  flex: 1;
+  min-width: 140px;
+}
+
+/* Tombol Cepat Ekspor Excel pada Filter Bar */
+.recap-export-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ECFDF5;
+  color: #059669;
+  border: 1px solid #A7F3D0;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.recap-export-quick-btn:hover {
+  background: #D1FAE5;
+  color: #047857;
+  border-color: #6EE7B7;
+  transform: translateY(-1px);
+}
+
+[data-theme="dark"] .recap-export-quick-btn {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34D399;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+[data-theme="dark"] .recap-export-quick-btn:hover {
+  background: rgba(16, 185, 129, 0.25);
+}
+
+/* MODAL EKSPOR EXCEL (.XLSX) */
+.export-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+@media (max-width: 480px) {
+  .export-preset-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.export-preset-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.export-preset-btn i {
+  font-size: 16px;
+  color: var(--text-secondary);
+}
+
+.export-preset-btn:hover {
+  border-color: #10B981;
+  color: #059669;
+}
+
+.export-preset-btn.active {
+  background: #ECFDF5;
+  border-color: #10B981;
+  color: #065F46;
+  box-shadow: 0 0 0 1px #10B981;
+}
+
+.export-preset-btn.active i {
+  color: #10B981;
+}
+
+[data-theme="dark"] .export-preset-btn.active {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: #34D399;
+  color: #A7F3D0;
+}
+
+.export-date-box {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.export-sheets-card {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.export-sheets-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.export-sheets-header i {
+  color: #10B981;
+  font-size: 16px;
+}
+
+.export-sheets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.export-sheet-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11.5px;
+}
+
+.export-sheet-item i {
+  font-size: 16px;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.export-sheet-item strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.export-sheet-item span {
+  display: block;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  margin-top: 1px;
 }
 
 /* CUSTOM FLOATING TOASTS */

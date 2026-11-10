@@ -969,9 +969,14 @@ const App = {
             <input type="date" class="recap-date-input" value="${pickerVal}" onchange="App.onCustomDateChange(this.value)" />
           </div>
         ` : ''}
-        <button type="button" class="recap-refresh-btn" onclick="App.refreshCurrentReport()" title="Segarkan Data Rekap">
-          <i class="ph ph-arrows-clockwise"></i>
-        </button>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <button type="button" class="recap-export-quick-btn" onclick="App.exportCurrentReportToExcel()" title="Unduh Excel (.xlsx) Rekapan Ini">
+            <i class="ph ph-file-xls"></i> <span>Unduh Excel</span>
+          </button>
+          <button type="button" class="recap-refresh-btn" onclick="App.refreshCurrentReport()" title="Segarkan Data Rekap">
+            <i class="ph ph-arrows-clockwise"></i>
+          </button>
+        </div>
       </div>
     `;
   },
@@ -1191,13 +1196,129 @@ const App = {
 
         <!-- Tombol Aksi Tambahan -->
         <div class="recap-footer-actions">
-          <button class="btn-secondary" onclick="App.triggerLockedFeature('Ekspor Laporan Excel/PDF', 'Unduh laporan rekapan lengkap dalam bentuk spreadsheet Excel atau format cetak PDF resmi untuk pembukuan bulanan.')">
-            <i class="ph ph-file-arrow-down"></i> Ekspor Excel / PDF 🔒
+          <button type="button" class="btn-secondary" onclick="App.openExportExcelModal()" style="border-color:#10B981; color:#059669; font-weight:700;">
+            <i class="ph ph-sliders-horizontal"></i> Opsi Periode Lain
           </button>
-          <button class="btn-primary" onclick="App.closeReportsModal()">Selesai Melihat Rekap</button>
+          <button type="button" class="btn-primary" onclick="App.exportCurrentReportToExcel()" style="background:#10B981; border-color:#059669; color:#FFF; font-weight:700;">
+            <i class="ph ph-file-xls"></i> Unduh Rekap Ini (.xlsx)
+          </button>
+          <button type="button" class="btn-secondary" onclick="App.closeReportsModal()">Tutup</button>
         </div>
       </div>
     `;
+  },
+
+  /**
+   * Unduh langsung rekapan penjualan yang sedang aktif ke Excel (.xlsx)
+   */
+  async exportCurrentReportToExcel() {
+    if (typeof ReportsExport === 'undefined') {
+      Notifications.toast('Modul ekspor sedang dimuat...', 'info', 1500);
+      return;
+    }
+
+    const filter = this.currentReportFilter || 'today';
+    const customDateIndo = (filter === 'custom' && this.currentReportCustomDate)
+      ? this.isoToIndoDate(this.currentReportCustomDate)
+      : '';
+
+    await ReportsExport.exportReport({
+      period: filter,
+      customDate: customDateIndo
+    });
+  },
+
+  /**
+   * Buka Modal Opsi Ekspor Excel (Pilihan Periode Lengkap)
+   */
+  async openExportExcelModal(preselectedPeriod = null) {
+    const isAuth = await this.verifyOwnerSecurityPin('Unduh Rekap Excel');
+    if (!isAuth) return;
+
+    const modal = document.getElementById('export-modal');
+    if (!modal) return;
+
+    const todayIso = this.getTodayIsoDate();
+    const singleInput = document.getElementById('export-single-date-input');
+    const startInput = document.getElementById('export-start-date-input');
+    const endInput = document.getElementById('export-end-date-input');
+
+    if (singleInput && !singleInput.value) singleInput.value = todayIso;
+    if (startInput && !startInput.value) startInput.value = todayIso;
+    if (endInput && !endInput.value) endInput.value = todayIso;
+
+    const initialPreset = preselectedPeriod || this.selectedExportPreset || 'today';
+    this.selectExportPreset(initialPreset);
+
+    modal.classList.add('modal-open');
+  },
+
+  /**
+   * Tutup Modal Opsi Ekspor Excel
+   */
+  closeExportExcelModal() {
+    const modal = document.getElementById('export-modal');
+    if (modal) modal.classList.remove('modal-open');
+  },
+
+  /**
+   * Pilih preset periode di Modal Ekspor Excel
+   */
+  selectExportPreset(period) {
+    this.selectedExportPreset = period;
+
+    document.querySelectorAll('.export-preset-btn').forEach(btn => {
+      const p = btn.getAttribute('data-period');
+      if (p === period) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+
+    const singleBox = document.getElementById('export-single-date-box');
+    const rangeBox = document.getElementById('export-range-date-box');
+
+    if (singleBox) singleBox.style.display = (period === 'custom') ? 'block' : 'none';
+    if (rangeBox) rangeBox.style.display = (period === 'range') ? 'block' : 'none';
+  },
+
+  /**
+   * Eksekusi unduh Excel berdasarkan pilihan di modal ekspor
+   */
+  async executeExcelExportFromModal() {
+    if (typeof ReportsExport === 'undefined') {
+      Notifications.toast('Modul ekspor sedang dimuat...', 'info', 1500);
+      return;
+    }
+
+    const preset = this.selectedExportPreset || 'today';
+    const options = { period: preset };
+
+    if (preset === 'custom') {
+      const singleVal = document.getElementById('export-single-date-input')?.value;
+      if (!singleVal) {
+        Notifications.toast('Silakan pilih tanggal terlebih dahulu', 'warning', 2000);
+        return;
+      }
+      options.customDate = this.isoToIndoDate(singleVal);
+    } else if (preset === 'range') {
+      const startVal = document.getElementById('export-start-date-input')?.value;
+      const endVal = document.getElementById('export-end-date-input')?.value;
+      if (!startVal || !endVal) {
+        Notifications.toast('Silakan isi tanggal mulai dan selesai', 'warning', 2000);
+        return;
+      }
+      if (startVal > endVal) {
+        Notifications.toast('Tanggal mulai tidak boleh lebih besar dari tanggal selesai', 'warning', 2500);
+        return;
+      }
+      options.startDate = this.isoToIndoDate(startVal);
+      options.endDate = this.isoToIndoDate(endVal);
+    }
+
+    this.closeExportExcelModal();
+    await ReportsExport.exportReport(options);
   },
 
   /**

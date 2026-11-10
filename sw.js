@@ -1,9 +1,9 @@
 /**
- * Service Worker POS Teras Foodies (v7)
+ * Service Worker POS Teras Foodies (v8)
  * Mendukung instalasi PWA lintas platform (Desktop, Android, iOS/iPadOS) & akses offline penuh
  */
 
-const CACHE_NAME = 'teras-foodies-pos-v7';
+const CACHE_NAME = 'teras-foodies-pos-v8';
 
 // Aset inti lokal yang wajib tersedia saat offline
 const CORE_ASSETS = [
@@ -12,6 +12,8 @@ const CORE_ASSETS = [
   './css/style.css',
   './config.js',
   './js/config.js',
+  './js/xlsx.full.min.js',
+  './js/export.js',
   './js/notifications.js',
   './js/db.js',
   './js/cart.js',

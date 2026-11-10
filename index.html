@@ -28,7 +28,7 @@
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
   <!-- Style CSS -->
-  <link rel="stylesheet" href="css/style.css?v=20261105-04">
+  <link rel="stylesheet" href="css/style.css?v=20261110-01">
 </head>
 <body>
 
@@ -151,6 +151,11 @@
       <button class="mobile-drawer-item" onclick="App.toggleMobileMenu(false); App.openReportsModal();">
         <i class="ph ph-chart-line-up" style="color:var(--color-primary)"></i>
         <span>Rekap Penjualan</span>
+        <span class="lock-indicator">🔒</span>
+      </button>
+      <button class="mobile-drawer-item" onclick="App.toggleMobileMenu(false); App.openExportExcelModal();">
+        <i class="ph ph-file-xls" style="color:#10B981"></i>
+        <span>Unduh Rekap Excel</span>
         <span class="lock-indicator">🔒</span>
       </button>
       <button class="mobile-drawer-item" onclick="App.toggleMobileMenu(false); App.openMenuStockModal();">
@@ -387,6 +392,119 @@
 
       <div class="modal-body" id="reports-content-area">
         <!-- Dimuat dinamis oleh App.renderReportsView() -->
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL UNDUH REKAP PENJUALAN EXCEL (.XLSX) -->
+  <div class="modal-backdrop" id="export-modal">
+    <div class="modal-box" style="max-width:540px;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <i class="ph ph-file-xls" style="font-size:26px; color:#10B981"></i>
+          <div>
+            <h3 class="modal-title" style="margin:0;">Unduh Rekapan Excel (.xlsx)</h3>
+            <span style="font-size:11.5px; color:var(--text-secondary);">Laporan komprehensif 4 lembar kerja resmi</span>
+          </div>
+        </div>
+        <button class="modal-close-btn" onclick="App.closeExportExcelModal()" aria-label="Tutup">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="export-modal-section">
+          <label class="form-label" style="font-weight:700; margin-bottom:8px;">Pilih Periode Rekapan:</label>
+          <div class="export-preset-grid">
+            <button type="button" class="export-preset-btn active" data-period="today" onclick="App.selectExportPreset('today')">
+              <i class="ph ph-calendar-check"></i> Hari Ini
+            </button>
+            <button type="button" class="export-preset-btn" data-period="yesterday" onclick="App.selectExportPreset('yesterday')">
+              <i class="ph ph-clock-counter-clockwise"></i> Kemarin
+            </button>
+            <button type="button" class="export-preset-btn" data-period="last_7_days" onclick="App.selectExportPreset('last_7_days')">
+              <i class="ph ph-calendar-blank"></i> 7 Hari Terakhir
+            </button>
+            <button type="button" class="export-preset-btn" data-period="this_month" onclick="App.selectExportPreset('this_month')">
+              <i class="ph ph-calendar-star"></i> Bulan Ini
+            </button>
+            <button type="button" class="export-preset-btn" data-period="last_month" onclick="App.selectExportPreset('last_month')">
+              <i class="ph ph-calendar-x"></i> Bulan Lalu
+            </button>
+            <button type="button" class="export-preset-btn" data-period="custom" onclick="App.selectExportPreset('custom')">
+              <i class="ph ph-calendar-plus"></i> Pilih Tanggal
+            </button>
+            <button type="button" class="export-preset-btn" data-period="range" onclick="App.selectExportPreset('range')">
+              <i class="ph ph-arrows-left-right"></i> Rentang Tanggal
+            </button>
+            <button type="button" class="export-preset-btn" data-period="all" onclick="App.selectExportPreset('all')">
+              <i class="ph ph-database"></i> Semua Riwayat
+            </button>
+          </div>
+        </div>
+
+        <!-- Input Tanggal Tunggal (Pilih Tanggal) -->
+        <div class="export-date-box" id="export-single-date-box" style="display:none; margin-top:12px;">
+          <label class="form-label" style="margin-bottom:6px;">Tanggal Penjualan:</label>
+          <input type="date" id="export-single-date-input" class="recap-date-input" style="width:100%; height:42px; font-size:14px; padding:8px 12px;">
+        </div>
+
+        <!-- Input Rentang Tanggal (Dari - Sampai) -->
+        <div class="export-date-box" id="export-range-date-box" style="display:none; margin-top:12px;">
+          <div class="form-row-2">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" style="margin-bottom:6px;">Dari Tanggal:</label>
+              <input type="date" id="export-start-date-input" class="recap-date-input" style="width:100%; height:42px; font-size:13px; padding:8px 10px;">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" style="margin-bottom:6px;">Sampai Tanggal:</label>
+              <input type="date" id="export-end-date-input" class="recap-date-input" style="width:100%; height:42px; font-size:13px; padding:8px 10px;">
+            </div>
+          </div>
+        </div>
+
+        <!-- Preview Lembar Kerja Excel yang Dihasilkan -->
+        <div class="export-sheets-card" style="margin-top:16px;">
+          <div class="export-sheets-header">
+            <i class="ph ph-layers"></i>
+            <span>Kelengkapan 4 Lembar Kerja (Worksheet):</span>
+          </div>
+          <div class="export-sheets-list">
+            <div class="export-sheet-item">
+              <i class="ph ph-check-circle" style="color:#10B981;"></i>
+              <div>
+                <strong>Sheet 1: Ringkasan Eksekutif</strong>
+                <span>Total omzet, diskon, uang kas tunai laci, QRIS, transfer, & saluran pesanan.</span>
+              </div>
+            </div>
+            <div class="export-sheet-item">
+              <i class="ph ph-check-circle" style="color:#10B981;"></i>
+              <div>
+                <strong>Sheet 2: Daftar Transaksi Lengkap</strong>
+                <span>Daftar seluruh nota penjualan, jam, kasir, subtotal, bayar, kembalian, & catatan.</span>
+              </div>
+            </div>
+            <div class="export-sheet-item">
+              <i class="ph ph-check-circle" style="color:#10B981;"></i>
+              <div>
+                <strong>Sheet 3: Performa Menu Terjual</strong>
+                <span>Rangking menu terlaris, varian porsi, total porsi laku, omzet, & persentase kontribusi.</span>
+              </div>
+            </div>
+            <div class="export-sheet-item">
+              <i class="ph ph-check-circle" style="color:#10B981;"></i>
+              <div>
+                <strong>Sheet 4: Rincian Detail Item</strong>
+                <span>Rincian baris item per transaksi lengkap dengan catatan khusus konsumen.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <button type="button" class="btn-secondary" onclick="App.closeExportExcelModal()">Batal</button>
+        <button type="button" class="btn-primary" id="btn-do-export-excel" onclick="App.executeExcelExportFromModal()" style="background:#10B981; border-color:#059669; color:#FFF; font-weight:700;">
+          <i class="ph ph-download-simple"></i> Unduh File Excel (.xlsx)
+        </button>
       </div>
     </div>
   </div>
@@ -695,12 +813,14 @@
   <div id="thermal-receipt-print-area"></div>
 
   <!-- SCRIPTS APLIKASI -->
-  <script src="config.js?v=20261105-04"></script>
-  <script src="js/notifications.js?v=20261105-04"></script>
-  <script src="js/db.js?v=20261105-04"></script>
-  <script src="js/cart.js?v=20261105-04"></script>
-  <script src="js/receipt.js?v=20261105-04"></script>
-  <script src="js/sync.js?v=20261105-04"></script>
-  <script src="js/app.js?v=20261105-04"></script>
+  <script src="js/xlsx.full.min.js"></script>
+  <script src="config.js?v=20261110-01"></script>
+  <script src="js/notifications.js?v=20261110-01"></script>
+  <script src="js/db.js?v=20261110-01"></script>
+  <script src="js/cart.js?v=20261110-01"></script>
+  <script src="js/receipt.js?v=20261110-01"></script>
+  <script src="js/export.js?v=20261110-01"></script>
+  <script src="js/sync.js?v=20261110-01"></script>
+  <script src="js/app.js?v=20261110-01"></script>
 </body>
 </html>

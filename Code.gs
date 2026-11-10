@@ -32,6 +32,23 @@ const SHEET_NAMES = {
 const DEVELOPER_WA = '6288228511309';
 
 /**
+ * Menu Kustom di Google Sheets
+ */
+function onOpen() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.createMenu('POS Teras Foodies')
+      .addItem('🚀 Setup / Perbarui Database', 'setupDatabase')
+      .addItem('🔧 Perbaiki Format Tanggal Transaksi', 'repairTransactionDates')
+      .addSeparator()
+      .addItem('➕ Tambah Menu Chocolatos', 'tambahMenuChocolatos')
+      .addToUi();
+  } catch (err) {
+    // Abaikan jika dijalankan di context tanpa UI
+  }
+}
+
+/**
  * Inisialisasi struktur database Google Sheets secara otomatis
  * WAJIB dijalankan satu kali saat setup awal
  */
@@ -238,6 +255,10 @@ function doGet(e) {
     }
 
     if (action === 'getReports') {
+      // Jika request meminta data lengkap komprehensif untuk ekspor Excel
+      if (params.full === '1' || params.full === 'true' || params.export === '1') {
+        return handleGetExportReport(params);
+      }
       let filter = (params.date || params.period || '').toString().trim();
       if (!filter || filter.toLowerCase() === 'today') {
         filter = getTodayFormatted();
@@ -245,6 +266,10 @@ function doGet(e) {
         filter = 'all';
       }
       return handleGetReports(filter);
+    }
+
+    if (action === 'getExportReport' || action === 'getFullReport') {
+      return handleGetExportReport(params);
     }
 
     if (action === 'repairDates') {
@@ -982,6 +1007,371 @@ function handleGetReports(dateFilter) {
       },
       itemsTerjual: itemsTerjual,
       transaksiTerbaru: listTrx.reverse().slice(0, 20)
+    }
+  });
+}
+
+/**
+ * Normalisasi format tanggal apapun menjadi YYYY-MM-DD
+ */
+function toIsoDateStr(val, trxId) {
+  if (trxId) {
+    const idMatch = String(trxId).match(/(?:TRF|TRX|INV)-?(\d{4})(\d{2})(\d{2})/i);
+    if (idMatch) {
+      return idMatch[1] + '-' + idMatch[2] + '-' + idMatch[3];
+    }
+  }
+  if (!val) return '';
+  if (val instanceof Date) {
+    return Utilities.formatDate(val, 'Asia/Jakarta', 'yyyy-MM-dd');
+  }
+  const cleanStr = String(val).replace(/^'+/, '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) {
+    return cleanStr;
+  }
+  const dmyMatch = cleanStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (dmyMatch) {
+    const d = ('0' + dmyMatch[1]).slice(-2);
+    const m = ('0' + dmyMatch[2]).slice(-2);
+    const y = dmyMatch[3];
+    return y + '-' + m + '-' + d;
+  }
+  return cleanStr;
+}
+
+/**
+ * Format string tanggal YYYY-MM-DD ke format tampilan Indonesia DD/MM/YYYY
+ */
+function isoToDisplayDate(isoStr) {
+  if (!isoStr) return '';
+  const match = String(isoStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return match[3] + '/' + match[2] + '/' + match[1];
+  }
+  return isoStr;
+}
+
+/**
+ * Endpoint Pengambilan Data Laporan Komprehensif untuk Ekspor Excel (.xlsx)
+ * Mendukung filter: today, yesterday, last_7_days, this_month, last_month, custom, range, all
+ */
+function handleGetExportReport(params) {
+  params = params || {};
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetTrx = ss.getSheetByName(SHEET_NAMES.TRANSAKSI);
+  const sheetDetail = ss.getSheetByName(SHEET_NAMES.DETAIL);
+  const sheetMenu = ss.getSheetByName(SHEET_NAMES.MENU);
+
+  const now = new Date();
+  const todayIso = Utilities.formatDate(now, 'Asia/Jakarta', 'yyyy-MM-dd');
+  const generatedTimestamp = Utilities.formatDate(now, 'Asia/Jakarta', 'dd/MM/yyyy HH:mm:ss') + ' WIB';
+
+  let period = (params.period || params.filter || '').toString().trim().toLowerCase();
+  let customDate = (params.date || params.customDate || '').toString().trim();
+  let startDate = (params.startDate || params.start || '').toString().trim();
+  let endDate = (params.endDate || params.end || '').toString().trim();
+
+  // Tentukan batas tanggal ISO (startIso & endIso)
+  let startIso = '';
+  let endIso = '';
+  let labelPeriode = '';
+
+  if (period === 'all' || period === 'semua') {
+    labelPeriode = 'Semua Penjualan (All-Time)';
+  } else if (period === 'yesterday' || period === 'kemarin') {
+    const yDate = new Date(now.getTime() - 86400000);
+    const yIso = Utilities.formatDate(yDate, 'Asia/Jakarta', 'yyyy-MM-dd');
+    startIso = yIso;
+    endIso = yIso;
+    labelPeriode = 'Kemarin (' + isoToDisplayDate(yIso) + ')';
+  } else if (period === 'last_7_days' || period === '7days' || period === 'seminggu') {
+    const pastDate = new Date(now.getTime() - 6 * 86400000);
+    startIso = Utilities.formatDate(pastDate, 'Asia/Jakarta', 'yyyy-MM-dd');
+    endIso = todayIso;
+    labelPeriode = '7 Hari Terakhir (' + isoToDisplayDate(startIso) + ' - ' + isoToDisplayDate(endIso) + ')';
+  } else if (period === 'this_month' || period === 'bulan_ini') {
+    const ym = todayIso.substring(0, 7);
+    startIso = ym + '-01';
+    endIso = ym + '-31';
+    labelPeriode = 'Bulan Ini (' + ym + ')';
+  } else if (period === 'last_month' || period === 'bulan_lalu') {
+    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastYm = Utilities.formatDate(prevMonthDate, 'Asia/Jakarta', 'yyyy-MM');
+    startIso = lastYm + '-01';
+    endIso = lastYm + '-31';
+    labelPeriode = 'Bulan Lalu (' + lastYm + ')';
+  } else if (startDate && endDate) {
+    startIso = toIsoDateStr(startDate);
+    endIso = toIsoDateStr(endDate);
+    labelPeriode = 'Rentang (' + isoToDisplayDate(startIso) + ' s/d ' + isoToDisplayDate(endIso) + ')';
+  } else if (customDate) {
+    const cIso = toIsoDateStr(customDate);
+    startIso = cIso;
+    endIso = cIso;
+    labelPeriode = (cIso === todayIso) ? ('Hari Ini (' + isoToDisplayDate(cIso) + ')') : ('Tanggal ' + isoToDisplayDate(cIso));
+  } else {
+    // Default: Hari ini
+    startIso = todayIso;
+    endIso = todayIso;
+    labelPeriode = 'Hari Ini (' + isoToDisplayDate(todayIso) + ')';
+  }
+
+  // Siapkan map kategori menu
+  const menuCategoryMap = {};
+  if (sheetMenu && sheetMenu.getLastRow() > 1) {
+    const rawMenu = sheetMenu.getRange(2, 1, sheetMenu.getLastRow() - 1, 4).getValues();
+    for (let m = 0; m < rawMenu.length; m++) {
+      const mId = String(rawMenu[m][0] || '').trim();
+      const mKat = String(rawMenu[m][1] || '').trim();
+      const mNama = String(rawMenu[m][2] || '').trim();
+      if (mId && mKat) menuCategoryMap[mId] = mKat;
+      if (mNama && mKat) menuCategoryMap[mNama.toLowerCase()] = mKat;
+    }
+  }
+
+  // Jika sheet transaksi kosong
+  if (!sheetTrx || sheetTrx.getLastRow() <= 1) {
+    return createJsonResponse({
+      status: 'success',
+      data: {
+        periode: { label: labelPeriode, filter: period, startDate: startIso, endDate: endIso, generatedAt: generatedTimestamp },
+        summary: {
+          totalOmzetKotor: 0, totalDiskon: 0, totalBiayaLain: 0, totalOmzet: 0, totalTransaksi: 0,
+          totalQtyItem: 0, rataRataTransaksi: 0,
+          metode: {
+            tunai: { label: 'Tunai (Cash di Laci)', count: 0, total: 0 },
+            qris: { label: 'Non-Tunai QRIS', count: 0, total: 0 },
+            transfer: { label: 'Transfer Bank', count: 0, total: 0 }
+          },
+          tipePesanan: {}
+        },
+        itemsTerjual: [],
+        transaksi: [],
+        detailItem: []
+      }
+    });
+  }
+
+  const rawTrx = sheetTrx.getRange(2, 1, sheetTrx.getLastRow() - 1, 15).getValues();
+  const matchedTrxList = [];
+  const validTrxIds = new Set();
+
+  let totalOmzetKotor = 0;
+  let totalDiskon = 0;
+  let totalBiayaLain = 0;
+  let totalOmzet = 0;
+  let totalTransaksi = 0;
+
+  const paymentBreakdown = {
+    tunai: { label: 'Tunai (Cash di Laci)', count: 0, total: 0 },
+    qris: { label: 'Non-Tunai QRIS', count: 0, total: 0 },
+    transfer: { label: 'Transfer Bank', count: 0, total: 0 }
+  };
+
+  const orderTypeBreakdown = {};
+
+  for (let i = 0; i < rawTrx.length; i++) {
+    const row = rawTrx[i];
+    const trxId = String(row[0] || '').trim();
+    if (!trxId) continue;
+
+    const rowDateIso = toIsoDateStr(row[1], trxId);
+
+    // Cek kecocokan filter rentang tanggal
+    let isMatch = false;
+    if (!startIso && !endIso) {
+      isMatch = true; // All
+    } else if (startIso && endIso) {
+      isMatch = (rowDateIso >= startIso && rowDateIso <= endIso);
+    } else if (startIso) {
+      isMatch = (rowDateIso >= startIso);
+    }
+
+    if (isMatch) {
+      validTrxIds.add(trxId);
+      totalTransaksi++;
+
+      let displayDate = isoToDisplayDate(rowDateIso);
+      let jamClean = '';
+      if (row[2] instanceof Date) {
+        jamClean = formatTimeIndo(row[2]);
+      } else {
+        const rawJamStr = String(row[2] || '').replace(/^'+/, '').trim();
+        const timeMatch = rawJamStr.match(/(\d{2}:\d{2}(?::\d{2})?)/);
+        jamClean = timeMatch ? timeMatch[1] : rawJamStr;
+      }
+
+      const subtotal = Number(row[6]) || 0;
+      const diskon = Number(row[7]) || 0;
+      const biayaLain = Number(row[8]) || 0;
+      const totalAkhir = Number(row[9]) || 0;
+      const uangDiterima = Number(row[10]) || 0;
+      const kembalian = Number(row[11]) || 0;
+      const kasir = String(row[3] || 'Kasir');
+      const tipePesanan = String(row[4] || 'Dine-in');
+      const metodeBayar = String(row[5] || 'Tunai');
+      const statusBayar = String(row[12] || 'Lunas');
+      const statusSync = String(row[13] || 'Online');
+      const catatan = String(row[14] || '');
+
+      totalOmzetKotor += subtotal;
+      totalDiskon += diskon;
+      totalBiayaLain += biayaLain;
+      totalOmzet += totalAkhir;
+
+      const metLower = metodeBayar.toLowerCase();
+      if (metLower === 'tunai' || metLower === 'cash') {
+        paymentBreakdown.tunai.count++;
+        paymentBreakdown.tunai.total += totalAkhir;
+      } else if (metLower === 'qris') {
+        paymentBreakdown.qris.count++;
+        paymentBreakdown.qris.total += totalAkhir;
+      } else {
+        paymentBreakdown.transfer.count++;
+        paymentBreakdown.transfer.total += totalAkhir;
+      }
+
+      const tipeKey = tipePesanan || 'Lainnya';
+      if (!orderTypeBreakdown[tipeKey]) {
+        orderTypeBreakdown[tipeKey] = { label: tipeKey, count: 0, total: 0 };
+      }
+      orderTypeBreakdown[tipeKey].count++;
+      orderTypeBreakdown[tipeKey].total += totalAkhir;
+
+      matchedTrxList.push({
+        id: trxId,
+        tanggal: displayDate,
+        tanggalIso: rowDateIso,
+        jam: jamClean,
+        kasir: kasir,
+        tipePesanan: tipePesanan,
+        metodeBayar: metodeBayar,
+        subtotal: subtotal,
+        diskon: diskon,
+        biayaLain: biayaLain,
+        totalAkhir: totalAkhir,
+        uangDiterima: uangDiterima,
+        kembalian: kembalian,
+        statusBayar: statusBayar,
+        statusSync: statusSync,
+        catatan: catatan,
+        totalItem: 0,
+        ringkasanPesanan: ''
+      });
+    }
+  }
+
+  // Baca sheet Detail Transaksi untuk transaksi yang cocok
+  const matchedDetailList = [];
+  const itemSummaryMap = {};
+  const trxItemNotes = {};
+  const trxItemCountMap = {};
+  let totalQtyItem = 0;
+
+  if (sheetDetail && sheetDetail.getLastRow() > 1 && validTrxIds.size > 0) {
+    const rawDetail = sheetDetail.getRange(2, 1, sheetDetail.getLastRow() - 1, 9).getValues();
+    const trxMetaMap = {};
+    for (let t = 0; t < matchedTrxList.length; t++) {
+      trxMetaMap[matchedTrxList[t].id] = matchedTrxList[t];
+    }
+
+    for (let d = 0; d < rawDetail.length; d++) {
+      const dRow = rawDetail[d];
+      const tId = String(dRow[1] || '').trim();
+      if (validTrxIds.has(tId)) {
+        const detailId = String(dRow[0] || (tId + '-' + (d + 1)));
+        const menuId = String(dRow[2] || '');
+        const namaMenu = String(dRow[3] || '');
+        const varian = String(dRow[4] || '');
+        const hargaSatuan = Number(dRow[5]) || 0;
+        const qty = Number(dRow[6]) || 0;
+        const subtotalItem = Number(dRow[7]) || (hargaSatuan * qty);
+        const catatanItem = String(dRow[8] || '');
+
+        const meta = trxMetaMap[tId] || {};
+        const kategori = menuCategoryMap[menuId] || menuCategoryMap[namaMenu.toLowerCase()] || 'Menu';
+
+        totalQtyItem += qty;
+
+        matchedDetailList.push({
+          idDetail: detailId,
+          idTransaksi: tId,
+          tanggal: meta.tanggal || '',
+          jam: meta.jam || '',
+          kasir: meta.kasir || '',
+          tipePesanan: meta.tipePesanan || '',
+          kategori: kategori,
+          namaMenu: namaMenu,
+          varian: varian,
+          hargaSatuan: hargaSatuan,
+          qty: qty,
+          subtotal: subtotalItem,
+          catatan: catatanItem
+        });
+
+        const groupKey = namaMenu + '||' + varian;
+        if (!itemSummaryMap[groupKey]) {
+          itemSummaryMap[groupKey] = {
+            kategori: kategori,
+            namaMenu: namaMenu,
+            varian: varian,
+            hargaSatuan: hargaSatuan,
+            qty: 0,
+            omzet: 0
+          };
+        }
+        itemSummaryMap[groupKey].qty += qty;
+        itemSummaryMap[groupKey].omzet += subtotalItem;
+
+        if (!trxItemNotes[tId]) trxItemNotes[tId] = [];
+        trxItemNotes[tId].push(qty + 'x ' + namaMenu + (varian ? ' (' + varian + ')' : ''));
+        trxItemCountMap[tId] = (trxItemCountMap[tId] || 0) + qty;
+      }
+    }
+  }
+
+  for (let k = 0; k < matchedTrxList.length; k++) {
+    const tx = matchedTrxList[k];
+    tx.totalItem = trxItemCountMap[tx.id] || 0;
+    tx.ringkasanPesanan = (trxItemNotes[tx.id] || []).join('; ');
+  }
+
+  const itemsTerjual = Object.values(itemSummaryMap).sort(function(a, b) {
+    return b.qty - a.qty;
+  });
+
+  for (let s = 0; s < itemsTerjual.length; s++) {
+    const itm = itemsTerjual[s];
+    const pct = totalOmzet > 0 ? ((itm.omzet / totalOmzet) * 100).toFixed(2) + '%' : '0.00%';
+    itm.kontribusiPersen = pct;
+  }
+
+  const aov = totalTransaksi > 0 ? Math.round(totalOmzet / totalTransaksi) : 0;
+
+  return createJsonResponse({
+    status: 'success',
+    data: {
+      periode: {
+        label: labelPeriode,
+        filter: period || 'today',
+        startDate: startIso,
+        endDate: endIso,
+        generatedAt: generatedTimestamp
+      },
+      summary: {
+        totalOmzetKotor: totalOmzetKotor,
+        totalDiskon: totalDiskon,
+        totalBiayaLain: totalBiayaLain,
+        totalOmzet: totalOmzet,
+        totalTransaksi: totalTransaksi,
+        totalQtyItem: totalQtyItem,
+        rataRataTransaksi: aov,
+        metode: paymentBreakdown,
+        tipePesanan: orderTypeBreakdown
+      },
+      itemsTerjual: itemsTerjual,
+      transaksi: matchedTrxList,
+      detailItem: matchedDetailList
     }
   });
 }
