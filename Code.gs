@@ -31,6 +31,9 @@ const SHEET_NAMES = {
 
 const DEVELOPER_WA = '6288228511309';
 
+// Versi backend. Berguna untuk memastikan deployment Apps Script sudah diperbarui.
+const API_VERSION = '2026-11-19-recovery-1';
+
 /**
  * Menu Kustom di Google Sheets
  */
@@ -241,6 +244,7 @@ function doGet(e) {
       return createJsonResponse({
         status: 'success',
         message: 'POS Teras Foodies API Online',
+        version: API_VERSION,
         timestamp: new Date().toISOString()
       });
     }
@@ -270,6 +274,10 @@ function doGet(e) {
 
     if (action === 'getExportReport' || action === 'getFullReport') {
       return handleGetExportReport(params);
+    }
+
+    if (action === 'getTransactionIds') {
+      return handleGetTransactionIds();
     }
 
     if (action === 'repairDates') {
@@ -701,14 +709,35 @@ function logMutasiStok(idMenu, namaMenu, tipeMutasi, qtyMutasi, stokSebelum, sto
 }
 
 /**
- * Menyimpan satu transaksi penjualan beserta item detailnya,
- * dan OTOMATIS memotong stok menu di sheet Menu serta mencatat di Mutasi_Stok
+ * Mengambil daftar ID transaksi yang sudah ada di sheet Transaksi.
+ * Dipakai untuk mencegah duplikasi saat retry / pemulihan data lokal.
  */
-function handleSaveTransaction(trx) {
+function getTransactionIdSet(sheetTrx) {
+  const idSet = new Set();
+  if (!sheetTrx) return idSet;
+
+  const lastRow = sheetTrx.getLastRow();
+  if (lastRow <= 1) return idSet;
+
+  const values = sheetTrx.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < values.length; i++) {
+    const id = String(values[i][0] || '').trim();
+    if (id) idSet.add(id);
+  }
+  return idSet;
+}
+
+/**
+ * Inti penyimpanan transaksi. Tidak mengembalikan JSON agar bisa dipakai
+ * oleh simpan tunggal maupun batch sync.
+ * @return {{id: string, duplicate: boolean}}
+ */
+function saveTransactionRecord(trx, existingIdsSet) {
   if (!trx || !trx.id || !trx.items || trx.items.length === 0) {
     throw new Error('Data transaksi tidak lengkap.');
   }
 
+  const trxId = String(trx.id).trim();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheetTrx = ss.getSheetByName(SHEET_NAMES.TRANSAKSI);
   const sheetDetail = ss.getSheetByName(SHEET_NAMES.DETAIL);
@@ -716,6 +745,11 @@ function handleSaveTransaction(trx) {
 
   if (!sheetTrx || !sheetDetail) {
     throw new Error('Sheet Transaksi atau Detail belum tersedia.');
+  }
+
+  const ids = existingIdsSet || getTransactionIdSet(sheetTrx);
+  if (ids.has(trxId)) {
+    return { id: trxId, duplicate: true };
   }
 
   const now = new Date();
@@ -726,7 +760,7 @@ function handleSaveTransaction(trx) {
 
   // 1. Simpan baris header transaksi
   const rowTrx = [
-    trx.id,
+    trxId,
     tgl,
     jam,
     trx.kasir || 'Kasir',
@@ -743,15 +777,17 @@ function handleSaveTransaction(trx) {
     trx.catatan || ''
   ];
   sheetTrx.appendRow(rowTrx);
+  const headerRow = sheetTrx.getLastRow();
+  ids.add(trxId);
 
   // 2. Simpan baris rincian detail item secara batch
   const detailRows = [];
   for (let i = 0; i < trx.items.length; i++) {
     const item = trx.items[i];
-    const detailId = trx.id + '-' + (i + 1);
+    const detailId = trxId + '-' + (i + 1);
     detailRows.push([
       detailId,
-      trx.id,
+      trxId,
       item.id || '',
       item.nama || '',
       item.varian || '',
@@ -762,9 +798,24 @@ function handleSaveTransaction(trx) {
     ]);
   }
 
-  if (detailRows.length > 0) {
-    const nextRow = sheetDetail.getLastRow() + 1;
-    sheetDetail.getRange(nextRow, 1, detailRows.length, detailRows[0].length).setValues(detailRows);
+  const detailStartRow = sheetDetail.getLastRow() + 1;
+  try {
+    if (detailRows.length > 0) {
+      sheetDetail.getRange(detailStartRow, 1, detailRows.length, detailRows[0].length).setValues(detailRows);
+    }
+  } catch (detailErr) {
+    // Rollback agar tidak meninggalkan header tanpa rincian saat retry.
+    try {
+      const detailLastRow = sheetDetail.getLastRow();
+      if (detailLastRow >= detailStartRow) {
+        sheetDetail.deleteRows(detailStartRow, detailLastRow - detailStartRow + 1);
+      }
+      sheetTrx.deleteRow(headerRow);
+      ids.delete(trxId);
+    } catch (rollbackErr) {
+      Logger.log('Gagal rollback transaksi parsial ' + trxId + ': ' + rollbackErr.message);
+    }
+    throw detailErr;
   }
 
   // 3. Potong stok otomatis di sheet Menu & catat di Mutasi_Stok
@@ -803,7 +854,7 @@ function handleSaveTransaction(trx) {
                   -itemQty,
                   stokSebelum,
                   stokSesudah,
-                  'Transaksi ' + trx.id,
+                  'Transaksi ' + trxId,
                   trx.kasir || 'Kasir'
                 ]);
               }
@@ -832,42 +883,115 @@ function handleSaveTransaction(trx) {
     }
   }
 
+  return { id: trxId, duplicate: false };
+}
+
+/**
+ * Menyimpan satu transaksi penjualan beserta item detailnya,
+ * dan OTOMATIS memotong stok menu di sheet Menu serta mencatat di Mutasi_Stok
+ */
+function handleSaveTransaction(trx) {
+  const result = saveTransactionRecord(trx);
   SpreadsheetApp.flush();
 
   return createJsonResponse({
     status: 'success',
-    message: 'Transaksi ' + trx.id + ' berhasil disimpan.',
-    id: trx.id
+    message: result.duplicate
+      ? 'Transaksi ' + result.id + ' sudah pernah tersimpan (dilewati).'
+      : 'Transaksi ' + result.id + ' berhasil disimpan.',
+    id: result.id,
+    duplicate: !!result.duplicate
   });
 }
 
 /**
- * Sinkronisasi kumpulan transaksi offline yang tertunda
+ * Mengambil seluruh ID transaksi yang sudah ada.
+ * Dipakai frontend untuk mencari transaksi lokal yang belum masuk Sheets.
+ */
+function handleGetTransactionIds() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetTrx = ss.getSheetByName(SHEET_NAMES.TRANSAKSI);
+  const ids = [];
+
+  if (sheetTrx && sheetTrx.getLastRow() > 1) {
+    const values = sheetTrx.getRange(2, 1, sheetTrx.getLastRow() - 1, 1).getValues();
+    const seen = new Set();
+    for (let i = 0; i < values.length; i++) {
+      const id = String(values[i][0] || '').trim();
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        ids.push(id);
+      }
+    }
+  }
+
+  return createJsonResponse({
+    status: 'success',
+    version: API_VERSION,
+    data: { ids: ids, count: ids.length }
+  });
+}
+
+/**
+ * Sinkronisasi kumpulan transaksi offline yang tertunda.
+ * Mengembalikan ID yang benar-benar tersimpan/gagal agar client hanya
+ * menghapus antrean yang sudah terkonfirmasi.
  */
 function handleSyncBatchTransactions(items) {
   if (!items || !Array.isArray(items) || items.length === 0) {
     return createJsonResponse({
       status: 'success',
       message: 'Tidak ada item antrean yang perlu disinkronkan.',
-      syncedCount: 0
+      syncedCount: 0,
+      duplicateCount: 0,
+      failedCount: 0,
+      savedIds: [],
+      duplicateIds: [],
+      failed: []
     });
   }
 
-  let successCount = 0;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetTrx = ss.getSheetByName(SHEET_NAMES.TRANSAKSI);
+  if (!sheetTrx) {
+    throw new Error('Sheet Transaksi belum tersedia.');
+  }
+
+  const existingIdsSet = getTransactionIdSet(sheetTrx);
+  const savedIds = [];
+  const duplicateIds = [];
+  const failed = [];
+
   for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const itemId = (item && item.id) ? String(item.id) : '';
     try {
-      items[i].statusSync = 'Offline-Synced';
-      handleSaveTransaction(items[i]);
-      successCount++;
+      if (item) item.statusSync = 'Offline-Synced';
+      const result = saveTransactionRecord(item, existingIdsSet);
+      if (result.duplicate) {
+        duplicateIds.push(result.id);
+      } else {
+        savedIds.push(result.id);
+      }
     } catch (e) {
-      Logger.log('Gagal sync item ' + items[i].id + ': ' + e.message);
+      Logger.log('Gagal sync item ' + itemId + ': ' + e.message);
+      failed.push({ id: itemId, error: e.message || 'Gagal menyimpan transaksi.' });
     }
   }
 
+  SpreadsheetApp.flush();
+
   return createJsonResponse({
     status: 'success',
-    message: successCount + ' transaksi offline berhasil disinkronkan.',
-    syncedCount: successCount
+    message: savedIds.length + ' transaksi tersimpan, ' +
+      duplicateIds.length + ' duplikat dilewati, ' +
+      failed.length + ' gagal.',
+    syncedCount: savedIds.length,
+    duplicateCount: duplicateIds.length,
+    failedCount: failed.length,
+    savedIds: savedIds,
+    duplicateIds: duplicateIds,
+    failed: failed
   });
 }
 

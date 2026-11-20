@@ -263,3 +263,8 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+// Export aman untuk unit testing (Vitest/Node.js) tanpa mengganggu browser global
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { Cart, escapeHtml };
+}

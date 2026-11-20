@@ -1177,6 +1177,69 @@ body.pwa-installed #drawer-btn-install {
   flex-wrap: wrap;
 }
 
+/* Peringatan transaksi lokal yang belum masuk Google Sheets */
+.recap-pending-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: #FFFBEB;
+  border: 1px solid #FCD34D;
+  border-left: 4px solid #F59E0B;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.recap-pending-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.recap-pending-info i {
+  font-size: 22px;
+  color: #B45309;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.recap-pending-info strong {
+  display: block;
+  font-size: 13.5px;
+  color: #92400E;
+  margin-bottom: 2px;
+}
+
+.recap-pending-info span {
+  display: block;
+  font-size: 12px;
+  color: #B45309;
+  line-height: 1.45;
+}
+
+.recap-pending-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #F59E0B;
+  color: #FFFFFF;
+  border: 1px solid #D97706;
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.recap-pending-btn:hover {
+  background: #D97706;
+}
+
 .recap-filter-pill {
   padding: 6px 12px;
   border-radius: var(--radius-pill);

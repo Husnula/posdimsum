@@ -481,13 +481,19 @@ const App = {
         const res = await fetch(`${apiUrl}${queryStr}`);
         const json = await res.json();
         if (json.status === 'success' && json.data) {
-          const serverOmzet = Number(json.data.totalOmzet) || 0;
-          const serverTrx = Number(json.data.totalTransaksi) || 0;
+          // Gabungkan transaksi lokal yang belum tersinkron agar angka tidak
+          // turun kembali ke 0 saat server belum menerima data terbaru.
+          let merged = json.data;
+          try {
+            merged = await this.mergeLocalIntoServerReport(json.data, 'today');
+          } catch (mergeErr) {
+            console.warn('Gagal menggabungkan transaksi lokal ke ringkasan hari ini:', mergeErr);
+          }
 
-          // Gabungkan dengan transaksi offline lokal jika ada
-          const finalOmzet = Math.max(totalOmzet, serverOmzet);
-          const finalTrx = Math.max(totalTrx, serverTrx);
-          this.renderTodaySalesUI(finalOmzet, finalTrx);
+          this.renderTodaySalesUI(
+            Number(merged.totalOmzet) || 0,
+            Number(merged.totalTransaksi) || 0
+          );
         }
       }
     } catch (e) {
@@ -671,7 +677,8 @@ const App = {
             <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:12px; padding:12px; font-size:13px; text-align:left;">
               <div><strong>No Transaksi:</strong> ${transaction.id}</div>
               <div><strong>Tipe:</strong> ${transaction.tipePesanan} | <strong>Metode:</strong> ${transaction.metodeBayar}</div>
-              <div><strong>Status Data:</strong> ${syncRes.mode === 'online' ? '<span style="color:#059669">Tersimpan di Google Sheets</span>' : '<span style="color:#D97706">Tersimpan di Memori Lokal</span>'}</div>
+              <div><strong>Status Data:</strong> ${syncRes.mode === 'online' ? '<span style="color:#059669">Tersimpan di Google Sheets</span>' : '<span style="color:#D97706">Tersimpan di Memori Lokal (menunggu sinkronisasi)</span>'}</div>
+              ${syncRes.mode !== 'online' && syncRes.error ? `<div style="margin-top:6px; color:#B45309; font-size:12px;"><strong>Penyebab:</strong> ${escapeHtml(syncRes.error)}</div>` : ''}
             </div>
           </div>
         `,
@@ -945,6 +952,162 @@ const App = {
     await this.fetchAndRenderReports();
   },
 
+  /**
+   * Dipanggil otomatis setelah antrean selesai disinkronkan.
+   * Hanya memperbarui rekap jika modal rekap sedang terbuka.
+   */
+  async refreshOpenReports() {
+    const modal = document.getElementById('reports-modal');
+    if (modal && modal.classList.contains('modal-open')) {
+      await this.fetchAndRenderReports();
+    }
+  },
+
+  /**
+   * Sinkronisasi manual antrean transaksi yang tertunda.
+   */
+  async manualSync() {
+    if (typeof SyncEngine === 'undefined' || !SyncEngine.syncPendingQueue) return;
+
+    if (!navigator.onLine) {
+      Notifications.toast('Perangkat sedang offline. Sambungkan internet lalu coba lagi.', 'warning', 3000);
+      return;
+    }
+
+    const result = await SyncEngine.syncPendingQueue({ silent: false });
+
+    // syncPendingQueue sudah menyegarkan dashboard dan rekap yang terbuka.
+    return result;
+  },
+
+  /**
+   * Alat pemulihan: mencari transaksi yang hanya ada di perangkat ini
+   * lalu mengirim ulang ke Google Sheets tanpa membuat duplikat.
+   */
+  async recoverLocalTransactions() {
+    if (typeof SyncEngine === 'undefined' || !SyncEngine.recoverMissingTransactions) {
+      Notifications.toast('Modul sinkronisasi belum siap.', 'warning', 2500);
+      return;
+    }
+
+    if (!navigator.onLine) {
+      Notifications.toast('Perangkat sedang offline. Sambungkan internet lalu coba lagi.', 'warning', 3000);
+      return;
+    }
+
+    if (SyncEngine.isSyncing) {
+      Notifications.toast('Sinkronisasi sedang berjalan. Tunggu sebentar.', 'info', 2500);
+      return;
+    }
+
+    let serverIds;
+    try {
+      serverIds = await SyncEngine.fetchServerTransactionIds();
+    } catch (e) {
+      const msg = e.message || 'Gagal memeriksa data server.';
+      if (typeof Swal !== 'undefined') {
+        Swal.fire({
+          icon: 'error',
+          title: 'Backend Belum Diperbarui',
+          html: `<p style="font-size:14px; line-height:1.5;">${escapeHtml(msg)}</p>
+                 <p style="font-size:13px; color:#64748B;">Deploy ulang <code>Code.gs</code> versi terbaru ke Apps Script, lalu coba lagi.</p>`
+        });
+      } else {
+        Notifications.error('Gagal memeriksa data server', msg);
+      }
+      return;
+    }
+
+    const local = await this.collectLocalTransactions();
+    const missing = SyncEngine.computeMissingTransactions(local.all, serverIds);
+
+    if (missing.length === 0) {
+      const msg = 'Semua transaksi di perangkat ini sudah tercatat di Google Sheets.';
+      if (typeof Swal !== 'undefined') {
+        Swal.fire({ icon: 'success', title: 'Tidak Ada Data Tertinggal', text: msg });
+      } else {
+        Notifications.toast(msg, 'success', 3000);
+      }
+      return;
+    }
+
+    const dates = Array.from(new Set(missing.map(t => String(t.tanggal || '').replace(/^'+/, '').trim()).filter(Boolean)))
+      .sort((a, b) => {
+        const pa = a.split('/').reverse().join('');
+        const pb = b.split('/').reverse().join('');
+        return pa.localeCompare(pb);
+      });
+    const totalNominal = missing.reduce((sum, t) => sum + (Number(t.totalAkhir) || 0), 0);
+    const dateLabel = dates.length > 0 ? dates.join(', ') : 'tanggal tidak diketahui';
+
+    const confirmed = typeof Swal !== 'undefined'
+      ? (await Swal.fire({
+          icon: 'warning',
+          title: 'Pulihkan Transaksi Lokal?',
+          html: `
+            <div style="text-align:left; font-size:14px; line-height:1.6;">
+              <p>Ditemukan <strong>${missing.length} transaksi</strong> di perangkat ini yang belum ada di Google Sheets.</p>
+              <p><strong>Tanggal:</strong> ${escapeHtml(dateLabel)}</p>
+              <p><strong>Total nilai:</strong> Rp${totalNominal.toLocaleString('id-ID')}</p>
+              <p style="color:#B45309; font-size:13px;">Transaksi akan dikirim bertahap. Data yang sudah ada di Sheets otomatis dilewati agar tidak dobel.</p>
+            </div>
+          `,
+          showCancelButton: true,
+          confirmButtonText: 'Ya, Kirim Sekarang',
+          cancelButtonText: 'Batal',
+          confirmButtonColor: '#059669'
+        })).isConfirmed
+      : window.confirm(`Ditemukan ${missing.length} transaksi lokal yang belum ada di Google Sheets (${dateLabel}). Total Rp${totalNominal.toLocaleString('id-ID')}. Kirim sekarang?`);
+
+    if (!confirmed) return;
+
+    let progressToastShown = false;
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({
+        title: 'Memulihkan Transaksi...',
+        html: '<p style="font-size:14px;">Mohon tunggu, jangan tutup aplikasi.</p>',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => Swal.showLoading()
+      });
+      progressToastShown = true;
+    }
+
+    let result;
+    try {
+      result = await SyncEngine.recoverMissingTransactions(missing);
+    } catch (e) {
+      if (progressToastShown) Swal.close();
+      Notifications.error('Pemulihan Gagal', e.message || 'Terjadi kesalahan saat memulihkan transaksi.');
+      return;
+    }
+
+    if (progressToastShown) Swal.close();
+
+    await this.updateTodaySalesSummary();
+    await this.fetchAndRenderReports();
+
+    const failedCount = (result.failed || []).length;
+    const summaryHtml = `
+      <div style="text-align:left; font-size:14px; line-height:1.7;">
+        <p><strong>${result.saved || 0}</strong> transaksi berhasil dikirim.</p>
+        <p><strong>${result.duplicates || 0}</strong> transaksi sudah ada dan dilewati.</p>
+        <p style="color:${failedCount > 0 ? '#B45309' : '#059669'};"><strong>${failedCount}</strong> transaksi gagal.</p>
+        ${failedCount > 0 ? '<p style="font-size:13px; color:#64748B;">Transaksi yang gagal tetap tersimpan di perangkat dan bisa dicoba lagi nanti.</p>' : ''}
+      </div>
+    `;
+
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({
+        icon: failedCount > 0 ? 'warning' : 'success',
+        title: 'Pemulihan Selesai',
+        html: summaryHtml
+      });
+    } else {
+      Notifications.toast(`Pemulihan selesai: ${result.saved || 0} tersimpan, ${failedCount} gagal.`, failedCount > 0 ? 'warning' : 'success', 4000);
+    }
+  },
+
   renderReportFilterBarHtml() {
     const isToday = this.currentReportFilter === 'today';
     const isAll = this.currentReportFilter === 'all';
@@ -981,7 +1144,34 @@ const App = {
     `;
   },
 
-  async buildLocalReportFallback(filterParam) {
+  /**
+   * Memeriksa apakah sebuah transaksi lokal termasuk dalam periode rekap aktif.
+   * Mendukung tanggal di properti `tanggal` maupun yang tertanam di ID transaksi.
+   */
+  localTransactionMatchesPeriod(t, filterParam, targetDateOverride) {
+    if (!t) return false;
+    if (filterParam === 'all') return true;
+
+    const todayStr = this.getTodayIndoDate();
+    const customStr = this.isoToIndoDate(this.currentReportCustomDate);
+    const targetDate = targetDateOverride || ((filterParam === 'today') ? todayStr : (filterParam === 'custom' ? customStr : ''));
+    const swappedTarget = this.swapDayMonth(targetDate);
+
+    const tgl = String(t.tanggal || '').replace(/^'+/, '').trim();
+    let idDate = '';
+    const match = String(t.id || '').match(/(?:TRF|TRX|INV)-?(\d{4})(\d{2})(\d{2})/i);
+    if (match) {
+      idDate = `${match[3]}/${match[2]}/${match[1]}`;
+    }
+
+    return (tgl === targetDate || tgl === swappedTarget || (idDate && (idDate === targetDate || idDate === swappedTarget)));
+  },
+
+  /**
+   * Mengumpulkan seluruh transaksi lokal (antrean pending + riwayat pesanan).
+   * `pending` adalah data yang belum dikonfirmasi masuk Google Sheets.
+   */
+  async collectLocalTransactions() {
     let offlineList = [];
     let recentList = [];
     try {
@@ -994,29 +1184,62 @@ const App = {
     }
 
     const mergedMap = new Map();
-    recentList.forEach(t => { if (t && t.id) mergedMap.set(t.id, t); });
-    offlineList.forEach(t => { if (t && t.id) mergedMap.set(t.id, t); });
+    recentList.forEach(t => { if (t && t.id) mergedMap.set(String(t.id), t); });
+    // Antrean pending diprioritaskan karena statusnya paling akurat.
+    offlineList.forEach(t => { if (t && t.id) mergedMap.set(String(t.id), t); });
     if (this.currentTransaction && this.currentTransaction.id) {
-      mergedMap.set(this.currentTransaction.id, this.currentTransaction);
+      mergedMap.set(String(this.currentTransaction.id), this.currentTransaction);
     }
 
-    const allLocal = Array.from(mergedMap.values());
+    return {
+      all: Array.from(mergedMap.values()),
+      pending: (offlineList || []).filter(t => t && t.id),
+      recent: (recentList || []).filter(t => t && t.id)
+    };
+  },
+
+  /**
+   * Menggabungkan transaksi lokal yang belum ada di server ke data rekap.
+   * Jika backend belum mendukung daftar ID, hanya antrean pending yang digabung
+   * agar tidak terjadi duplikasi dengan data yang sudah tersimpan.
+   */
+  async mergeLocalIntoServerReport(report, filterParam) {
+    if (!report || typeof SyncEngine === 'undefined' || !SyncEngine.mergePendingIntoReport) {
+      return report;
+    }
+
+    const local = await this.collectLocalTransactions();
+    const pendingInPeriod = local.pending.filter(t => this.localTransactionMatchesPeriod(t, filterParam));
+    let missing = pendingInPeriod;
+
+    let serverIds = null;
+    if (SyncEngine.fetchServerTransactionIds) {
+      try {
+        serverIds = await SyncEngine.fetchServerTransactionIds();
+      } catch (e) {
+        console.warn('Daftar ID server tidak tersedia, rekap memakai antrean pending saja:', e);
+      }
+    }
+
+    if (serverIds) {
+      const recentInPeriod = local.recent.filter(t => this.localTransactionMatchesPeriod(t, filterParam));
+      missing = SyncEngine.computeMissingTransactions(
+        pendingInPeriod.concat(recentInPeriod),
+        serverIds
+      );
+    }
+
+    if (!missing || missing.length === 0) return report;
+    return SyncEngine.mergePendingIntoReport(report, missing);
+  },
+
+  async buildLocalReportFallback(filterParam) {
+    const local = await this.collectLocalTransactions();
+    const allLocal = local.all;
     const todayStr = this.getTodayIndoDate();
     const customStr = this.isoToIndoDate(this.currentReportCustomDate);
-    const targetDate = (filterParam === 'today') ? todayStr : (filterParam === 'custom' ? customStr : '');
-    const swappedTarget = this.swapDayMonth(targetDate);
 
-    const filtered = allLocal.filter(t => {
-      if (filterParam === 'all') return true;
-      const tgl = String(t.tanggal || '').replace(/^'+/, '').trim();
-      let idDate = '';
-      const match = String(t.id || '').match(/(?:TRF|TRX|INV)-?(\d{4})(\d{2})(\d{2})/i);
-      if (match) {
-        idDate = `${match[3]}/${match[2]}/${match[1]}`;
-      }
-
-      return (tgl === targetDate || tgl === swappedTarget || (idDate && (idDate === targetDate || idDate === swappedTarget)));
-    });
+    const filtered = allLocal.filter(t => this.localTransactionMatchesPeriod(t, filterParam));
 
     let totalOmzet = 0;
     let totalTunai = 0;
@@ -1118,6 +1341,14 @@ const App = {
 
     if (!reportData) {
       reportData = await this.buildLocalReportFallback(filterParam);
+    } else {
+      // Rekap harus tetap menampilkan transaksi yang baru tersimpan di perangkat
+      // tetapi belum terkirim ke Google Sheets.
+      try {
+        reportData = await this.mergeLocalIntoServerReport(reportData, filterParam);
+      } catch (mergeErr) {
+        console.warn('Gagal menggabungkan transaksi lokal ke rekap:', mergeErr);
+      }
     }
 
     this.renderReportsView(reportData);
@@ -1151,10 +1382,28 @@ const App = {
     }
 
     const cashSubLabel = this.currentReportFilter === 'today' ? 'Wajib cocok dengan fisik laci' : 'Total pemasukan uang tunai';
+    const pendingCount = Number(data.pendingTransaksi) || 0;
+    const pendingOmzet = Number(data.pendingOmzet) || 0;
+
+    const pendingBanner = pendingCount > 0 ? `
+      <div class="recap-pending-banner">
+        <div class="recap-pending-info">
+          <i class="ph ph-warning-circle"></i>
+          <div>
+            <strong>${pendingCount} transaksi belum tersinkron</strong>
+            <span>Senilai Rp${pendingOmzet.toLocaleString('id-ID')} baru tersimpan di perangkat ini dan belum masuk Google Sheets.</span>
+          </div>
+        </div>
+        <button type="button" class="recap-pending-btn" onclick="App.manualSync()">
+          <i class="ph ph-arrows-clockwise"></i> Sinkronkan Sekarang
+        </button>
+      </div>
+    ` : '';
 
     contentEl.innerHTML = `
       <div class="recap-dashboard">
         ${this.renderReportFilterBarHtml()}
+        ${pendingBanner}
 
         <!-- Kartu Ringkasan Finansial -->
         <div class="recap-stat-grid">
@@ -1201,6 +1450,9 @@ const App = {
           </button>
           <button type="button" class="btn-primary" onclick="App.exportCurrentReportToExcel()" style="background:#10B981; border-color:#059669; color:#FFF; font-weight:700;">
             <i class="ph ph-file-xls"></i> Unduh Rekap Ini (.xlsx)
+          </button>
+          <button type="button" class="btn-secondary" onclick="App.recoverLocalTransactions()" style="border-color:#F59E0B; color:#B45309; font-weight:700;">
+            <i class="ph ph-database"></i> Pulihkan Data Lokal
           </button>
           <button type="button" class="btn-secondary" onclick="App.closeReportsModal()">Tutup</button>
         </div>
@@ -2508,3 +2760,8 @@ const App = {
 document.addEventListener('DOMContentLoaded', () => {
   App.init();
 });
+
+// Export untuk unit testing (Vitest/Node.js) tanpa mengganggu browser global
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { App };
+}

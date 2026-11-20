@@ -1,0 +1,22 @@
+{
+  "name": "pos-teras-foodies",
+  "version": "1.0.0",
+  "description": "Sistem Kasir POS PWA Teras Foodies",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "pos",
+    "pwa",
+    "dimsum",
+    "teras-foodies"
+  ],
+  "author": "Teras Foodies",
+  "license": "ISC",
+  "devDependencies": {
+    "happy-dom": "^21.0.4",
+    "vitest": "^5.1.0"
+  }
+}
